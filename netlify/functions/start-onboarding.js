@@ -23,12 +23,20 @@ const REQUIRED_FIELDS = [
   'opening_hours',
 ]
 
-function jsonResponse(statusCode, body) {
-  return {
-    statusCode,
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  }
+// Netlify Functions v2 requires every path to return a Response object
+// (or undefined) — returning the legacy { statusCode, headers, body }
+// shape throws "unsupported value" at runtime.
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type',
+}
+
+function jsonResponse(status, data) {
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: { 'Content-Type': 'application/json', ...corsHeaders },
+  })
 }
 
 function isValidEmail(email) {
@@ -36,6 +44,10 @@ function isValidEmail(email) {
 }
 
 export default async (req) => {
+  if (req.method === 'OPTIONS') {
+    return new Response(null, { status: 204, headers: corsHeaders })
+  }
+
   if (req.method !== 'POST') {
     return jsonResponse(405, { success: false, message: 'Method not allowed.' })
   }
