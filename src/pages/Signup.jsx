@@ -3,7 +3,16 @@ import Nav from '../components/Nav.jsx'
 import Footer from '../components/Footer.jsx'
 import { Button } from '../components/Button.jsx'
 
-const NICHES = ['Taxi', 'Takeaway', 'Eye Clinic', 'Other']
+// Only niches with an ACTIVE row in Supabase `pathway_templates` should be
+// listed here. The `value` sent to the backend must match that table's
+// `niche` column exactly (lowercase slug), not the display label.
+//
+// Currently active: taxi
+// Inactive in pathway_templates (add back once activated): takeaway, clinic, hotel
+const NICHES = [
+  { value: 'taxi', label: 'Taxi' },
+]
+
 const STYLE_PRESETS = [
   { value: 'professional', label: 'Professional & efficient' },
   { value: 'friendly', label: 'Warm & friendly' },
@@ -15,7 +24,7 @@ const initialForm = {
   contact_name: '',
   contact_email: '',
   contact_phone: '',
-  niche: 'Taxi',
+  niche: 'taxi',
   city: '',
   business_description: '',
   transfer_number: '',
@@ -161,13 +170,19 @@ export default function Signup() {
                 className={inputClass}
                 value={form.niche}
                 onChange={(e) => update('niche', e.target.value)}
+                disabled={NICHES.length === 1}
               >
                 {NICHES.map((n) => (
-                  <option key={n} value={n}>
-                    {n}
+                  <option key={n.value} value={n.value}>
+                    {n.label}
                   </option>
                 ))}
               </select>
+              {NICHES.length === 1 && (
+                <p className="text-paper-faint text-xs mt-1.5">
+                  Currently onboarding taxi firms only — more industries coming soon.
+                </p>
+              )}
             </Field>
 
             <Field
