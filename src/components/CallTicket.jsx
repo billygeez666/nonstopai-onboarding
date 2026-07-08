@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 
-const STAGES = [
+const DEFAULT_STAGES = [
   {
     key: 'ringing',
     label: 'INCOMING CALL',
@@ -33,17 +33,17 @@ const STAGES = [
   },
 ]
 
-export default function CallTicket() {
+export default function CallTicket({ header = 'DISPATCH LINE', stages = DEFAULT_STAGES }) {
   const [index, setIndex] = useState(0)
 
   useEffect(() => {
     const id = setInterval(() => {
-      setIndex((i) => (i + 1) % STAGES.length)
+      setIndex((i) => (i + 1) % stages.length)
     }, 2800)
     return () => clearInterval(id)
   }, [])
 
-  const stage = STAGES[index]
+  const stage = stages[index]
 
   return (
     <div className="relative w-full max-w-sm mx-auto lg:mx-0">
@@ -53,7 +53,7 @@ export default function CallTicket() {
       <div className="relative rounded-2xl border border-ink-line bg-ink-surface shadow-2xl shadow-black/40 overflow-hidden">
         {/* console header */}
         <div className="flex items-center justify-between px-5 py-3 border-b border-ink-line bg-ink-surface-2/60">
-          <span className="font-mono text-[11px] tracking-widest text-paper-faint">DISPATCH LINE</span>
+          <span className="font-mono text-[11px] tracking-widest text-paper-faint">{header}</span>
           <span className="flex items-center gap-1.5">
             <span className="w-1.5 h-1.5 rounded-full bg-live" />
             <span className="font-mono text-[11px] tracking-widest text-live">LIVE</span>
@@ -77,7 +77,7 @@ export default function CallTicket() {
 
         {/* progress dots */}
         <div className="flex items-center justify-center gap-1.5 pb-4">
-          {STAGES.map((s, i) => (
+          {stages.map((s, i) => (
             <span
               key={s.key}
               className={`h-1 rounded-full transition-all duration-500 ${
