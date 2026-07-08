@@ -1,17 +1,16 @@
 import { useState } from 'react'
+import { useParams } from 'react-router-dom'
 import Nav from '../components/Nav.jsx'
 import Footer from '../components/Footer.jsx'
 import { Button } from '../components/Button.jsx'
+import { liveVerticals, getVertical } from '../config/verticals/index.js'
 
-// Only niches with an ACTIVE row in Supabase `pathway_templates` should be
-// listed here. The `value` sent to the backend must match that table's
-// `niche` column exactly (lowercase slug), not the display label.
-//
-// Currently active: taxi
-// Inactive in pathway_templates (add back once activated): takeaway, clinic, hotel
-const NICHES = [
-  { value: 'taxi', label: 'Taxi' },
-]
+// The niche options are derived from the vertical registry. Only verticals
+// with status 'live' appear — which per the registry rule means their
+// signupValue has an ACTIVE row in Supabase `pathway_templates`.
+// The `value` sent to the backend is the vertical's signupValue (e.g. the
+// /food page submits 'takeaway'), which must match pathway_templates.niche.
+const NICHES = liveVerticals().map((v) => ({ value: v.signupValue, label: v.shortLabel }))
 
 const STYLE_PRESETS = [
   { value: 'professional', label: 'Professional & efficient' },
@@ -24,7 +23,7 @@ const initialForm = {
   contact_name: '',
   contact_email: '',
   contact_phone: '',
-  niche: 'taxi',
+  niche: NICHES[0]?.value || 'taxi',
   city: '',
   business_description: '',
   transfer_number: '',
@@ -52,9 +51,23 @@ const inputClass =
   'w-full rounded-xl border border-ink-line bg-ink-surface px-4 py-3.5 text-[15px] text-paper placeholder:text-paper-faint focus:border-signal focus:outline-none transition-colors'
 
 export default function Signup() {
-  const [form, setForm] = useState(initialForm)
+  // /signup/:vertical pre-selects and locks the industry (e.g. /signup/food
+  // locks the niche to 'takeaway'). Plain /signup keeps the dropdown open.
+  const { vertical: verticalSlug } = useParams()
+  const lockedVertical = (() => {
+    if (!verticalSlug) return null
+    const v = getVertical(verticalSlug)
+    return v && v.status === 'live' ? v : null
+  })()
+
+  const [form, setForm] = useState(() => ({
+    ...initialForm,
+    niche: lockedVertical ? lockedVertical.signupValue : initialForm.niche,
+  }))
   const [status, setStatus] = useState('idle') // idle | submitting | error
   const [error, setError] = useState('')
+
+  const nicheLocked = !!lockedVertical || NICHES.length === 1
 
   function update(field, value) {
     setForm((f) => ({ ...f, [field]: value }))
@@ -96,7 +109,7 @@ export default function Signup() {
               STEP 1 OF 2
             </span>
             <h1 className="font-display text-3xl font-semibold mt-2 mb-2">
-              Tell us about your firm
+              Tell us about your business
             </h1>
             <p className="text-paper-dim text-sm leading-relaxed">
               Takes about two minutes. You'll pay securely on the next screen — nothing is
@@ -170,7 +183,7 @@ export default function Signup() {
                 className={inputClass}
                 value={form.niche}
                 onChange={(e) => update('niche', e.target.value)}
-                disabled={NICHES.length === 1}
+                disabled={nicheLocked}
               >
                 {NICHES.map((n) => (
                   <option key={n.value} value={n.value}>
@@ -178,9 +191,9 @@ export default function Signup() {
                   </option>
                 ))}
               </select>
-              {NICHES.length === 1 && (
+              {lockedVertical && (
                 <p className="text-paper-faint text-xs mt-1.5">
-                  Currently onboarding taxi firms only — more industries coming soon.
+                  You're signing up for {lockedVertical.name}.
                 </p>
               )}
             </Field>
@@ -188,7 +201,7 @@ export default function Signup() {
             <Field
               label="WHAT SHOULD WE KNOW ABOUT YOUR BUSINESS?"
               htmlFor="business_description"
-              hint="Areas you cover, fares, anything the receptionist should mention."
+              hint="Areas you cover, services, anything the receptionist should mention."
             >
               <textarea
                 id="business_description"
@@ -252,10 +265,10 @@ export default function Signup() {
                 onChange={(e) => update('booking_required', e.target.checked)}
               />
               <label htmlFor="booking_required" className="text-sm text-paper-dim leading-relaxed">
-                <span className="text-paper font-medium">Confirm every job before dispatch</span>
+                <span className="text-paper font-medium">Confirm every booking before it's passed on</span>
                 <br />
-                Recommended for most firms — the receptionist reads the booking back before
-                sending it to a driver.
+                Recommended for most businesses — the receptionist reads the details back to
+                the customer before sending them to your team.
               </label>
             </div>
 

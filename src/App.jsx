@@ -22,6 +22,7 @@ export default function App() {
       ))}
 
       <Route path="/signup" element={<Signup />} />
+      <Route path="/signup/:vertical" element={<Signup />} />
       <Route path="/onboarding/success" element={<Success />} />
       <Route path="/onboarding/cancel" element={<Cancel />} />
       <Route path="*" element={<NotFound />} />

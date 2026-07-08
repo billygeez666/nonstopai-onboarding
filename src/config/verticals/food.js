@@ -13,7 +13,7 @@
 export default {
   slug: 'food',
   signupValue: 'takeaway',
-  status: 'coming_soon', // flip to 'live' with pathway_templates.takeaway.is_active
+  status: 'live', // pathway_templates.takeaway.is_active = true (call test passed 2026-07-08)
   name: 'FOOD OS',
   shortLabel: 'Takeaway & Food Ordering',
   cardBlurb: 'Website, 24/7 AI order line and enquiry handling for takeaways and restaurants.',

@@ -8,7 +8,7 @@ import { ButtonLink } from '../components/Button.jsx'
 // original taxi Landing.jsx — only the content is parameterized.
 
 export default function VerticalLanding({ config }) {
-  const signupTo = config.signupPath || '/signup'
+  const signupTo = config.signupPath || `/signup/${config.slug}`
   const isLive = config.status === 'live'
 
   return (
