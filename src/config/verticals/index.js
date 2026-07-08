@@ -24,3 +24,13 @@ export const getVertical = (slug) => VERTICALS.find((v) => v.slug === slug) || n
 
 export const getVerticalBySignupValue = (value) =>
   VERTICALS.find((v) => v.signupValue === value) || null
+
+// Verticals on the roadmap - shown as 'coming soon' cards on the homepage
+// picker only. They have no routes, no pages, no signup until a real config
+// file, demo pathway, and active pathway_templates row exist.
+export const UPCOMING = [
+  { name: 'Clinics', blurb: '24/7 AI booking line for private clinics and practices.' },
+  { name: 'Hotels', blurb: 'Never miss a reservation call, day or night.' },
+  { name: 'Trades', blurb: 'Every job enquiry answered while you are on the tools.' },
+  { name: 'Dentists', blurb: 'Appointment capture and enquiry handling around the clock.' },
+]

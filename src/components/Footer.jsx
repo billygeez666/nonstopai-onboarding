@@ -5,7 +5,7 @@ export default function Footer() {
         <p className="font-mono text-xs tracking-wide">
           NONSTOP<span className="text-signal">AI</span> · UK
         </p>
-        <p>Built for taxi firms who never want to miss another booking.</p>
+        <p>Built for businesses that never want to miss another customer.</p>
       </div>
     </footer>
   )

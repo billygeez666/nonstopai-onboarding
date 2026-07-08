@@ -2,12 +2,14 @@ import Nav from '../components/Nav.jsx'
 import Footer from '../components/Footer.jsx'
 import CallTicket from '../components/CallTicket.jsx'
 import { ButtonLink } from '../components/Button.jsx'
+import useMeta from '../hooks/useMeta.js'
 
 // Reusable vertical landing template. Renders any config from
 // src/config/verticals/. Section order and styling are identical to the
 // original taxi Landing.jsx — only the content is parameterized.
 
 export default function VerticalLanding({ config }) {
+  useMeta(config.meta)
   const signupTo = config.signupPath || `/signup/${config.slug}`
   const isLive = config.status === 'live'
 

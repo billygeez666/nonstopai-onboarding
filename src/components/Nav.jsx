@@ -10,7 +10,7 @@ export default function Nav() {
         </Link>
         <Link
           to="/signup"
-          className="hidden sm:inline-flex items-center rounded-full bg-signal text-ink font-semibold text-sm px-5 py-2.5 hover:bg-signal-dim transition-colors"
+          className="inline-flex items-center rounded-full bg-signal text-ink font-semibold text-sm px-5 py-2.5 hover:bg-signal-dim transition-colors"
         >
           Get started
         </Link>

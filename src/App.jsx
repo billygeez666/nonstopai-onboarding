@@ -1,19 +1,17 @@
 import { Routes, Route } from 'react-router-dom'
+import Home from './pages/Home.jsx'
 import VerticalLanding from './pages/VerticalLanding.jsx'
 import Signup from './pages/Signup.jsx'
 import Success from './pages/Success.jsx'
 import Cancel from './pages/Cancel.jsx'
 import NotFound from './pages/NotFound.jsx'
-import { VERTICALS, getVertical } from './config/verticals/index.js'
+import { VERTICALS } from './config/verticals/index.js'
 
 export default function App() {
-  const taxi = getVertical('taxi')
-
   return (
     <Routes>
-      {/* Phase 1: homepage still renders the taxi config (identical UX).
-          Phase 3 replaces this with the platform homepage. */}
-      <Route path="/" element={<VerticalLanding config={taxi} />} />
+      {/* Platform homepage - industry picker renders from the registry */}
+      <Route path="/" element={<Home />} />
 
       {/* One route per registered vertical — new verticals appear here
           automatically when added to the registry. */}
