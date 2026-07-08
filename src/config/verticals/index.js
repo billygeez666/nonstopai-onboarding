@@ -14,8 +14,9 @@
 // a landing page but no checkout.
 
 import taxi from './taxi.js'
+import food from './food.js'
 
-export const VERTICALS = [taxi]
+export const VERTICALS = [taxi, food]
 
 export const liveVerticals = () => VERTICALS.filter((v) => v.status === 'live')
 
