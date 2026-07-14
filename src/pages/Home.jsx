@@ -1,295 +1,193 @@
+import { useEffect } from 'react'
 import { Link } from 'react-router-dom'
-import Nav from '../components/Nav.jsx'
-import Footer from '../components/Footer.jsx'
-import CallTicket from '../components/CallTicket.jsx'
-import { ButtonLink } from '../components/Button.jsx'
 import useMeta from '../hooks/useMeta.js'
-import { VERTICALS, UPCOMING } from '../config/verticals/index.js'
+import './Home.css'
 
 const META = {
-  title: 'NONSTOP AI — AI Operating Systems for Service Businesses',
+  title: 'NONSTOP AI — Turn missed calls into paying customers',
   description:
-    'Every missed call is lost revenue. NONSTOP AI builds complete AI operating systems - website, 24/7 AI receptionist, booking and order capture - for taxi firms, takeaways and more. Setup done for you.',
+    'A complete business system — professional website, 24/7 AI receptionist, booking capture and SMS follow-ups — installed and supported for you, on your own number.',
 }
 
-// Generic platform ticket stages — vertical-neutral version of the animation.
-const PLATFORM_TICKET = {
-  header: 'FRONT DESK',
-  stages: [
-    {
-      key: 'ringing',
-      label: 'INCOMING CALL',
-      dotClass: 'bg-signal animate-ping-slow',
-      line1: '07911 224 488',
-      line2: 'Mobile · 11:47pm',
-      footLabel: 'STATUS',
-      footValue: 'Ringing…',
-      footClass: 'text-signal',
-    },
-    {
-      key: 'answering',
-      label: 'AI RECEPTIONIST',
-      dotClass: 'bg-signal',
-      line1: 'Answered in 1 ring',
-      line2: '“Thanks for calling — how can I help?”',
-      footLabel: 'STATUS',
-      footValue: 'Capturing details…',
-      footClass: 'text-paper-dim',
-    },
-    {
-      key: 'booked',
-      label: 'CAPTURED',
-      dotClass: 'bg-live',
-      line1: 'Booking details taken',
-      line2: 'Customer confirmed · Team notified',
-      footLabel: 'STATUS',
-      footValue: 'Revenue saved',
-      footClass: 'text-live',
-    },
-  ],
-}
-
-const PROBLEMS = [
-  {
-    title: 'Missed calls are lost revenue',
-    body: 'When the phone rings out, the customer calls your competitor. Most service businesses lose bookings every single week this way.',
-  },
-  {
-    title: 'After-hours enquiries go nowhere',
-    body: 'Customers call at night, on weekends, during the rush. An AI front desk answers every one, 24/7, without hiring anyone.',
-  },
-  {
-    title: 'Slow follow-up kills deals',
-    body: 'Details get scribbled down, lost, or never captured. Every call is captured in full and sent straight to your team.',
-  },
-]
-
-const INCLUDED = [
-  {
-    title: 'Professional website',
-    body: 'A custom, sleek website for your business, built and deployed by us.',
-  },
-  {
-    title: '24/7 AI receptionist',
-    body: 'Every call answered — even when your team is busy, closed, or off the clock.',
-  },
-  {
-    title: 'Booking & order capture',
-    body: 'Captures the details that matter for your industry so nothing gets missed.',
-  },
-  {
-    title: 'Missed-call protection',
-    body: 'Protects your business from losing customers when nobody can answer.',
-  },
-  {
-    title: 'Automatic notifications',
-    body: 'Bookings and enquiries sent straight to your team by SMS or email.',
-  },
-  {
-    title: 'Setup done for you',
-    body: 'No tech work on your side. We build it, connect it, host it and take you live.',
-  },
-]
-
-const STEPS = [
-  {
-    n: '01',
-    title: 'Choose your industry',
-    body: 'Pick your operating system below and tell us about your business in one simple form.',
-  },
-  {
-    n: '02',
-    title: 'We build your system',
-    body: 'Website, AI receptionist, capture system and customer front desk — set up for you.',
-  },
-  {
-    n: '03',
-    title: 'Go live',
-    body: 'Your operating system goes live so customers can call, book and order 24/7.',
-  },
-]
+const SIGNUP = '/signup' // internal react-router route
+// Internal vertical routes. In the app these can be react-router <Link> paths ('/taxi','/food','/signup').
+// Kept as anchors so the component is router-agnostic; swap to <Link> if preferred.
 
 export default function Home() {
   useMeta(META)
+  // scroll-reveal + single-open FAQ, scoped to this component
+  useEffect(() => {
+    const root = document.querySelector('.nsh')
+    if (!root) return
+    const io = new IntersectionObserver((es) => {
+      es.forEach((e) => { if (e.isIntersecting) { e.target.classList.add('in'); io.unobserve(e.target) } })
+    }, { threshold: 0.12 })
+    root.querySelectorAll('.reveal').forEach((el) => io.observe(el))
+    const t = setTimeout(() => root.querySelectorAll('.reveal:not(.in)').forEach((el) => el.classList.add('in')), 4000)
+
+    const faq = [...root.querySelectorAll('.faq details')]
+    const handlers = faq.map((d) => {
+      const h = () => { if (d.open) faq.forEach((o) => { if (o !== d) o.open = false }) }
+      d.addEventListener('toggle', h)
+      return [d, h]
+    })
+    return () => { io.disconnect(); clearTimeout(t); handlers.forEach(([d, h]) => d.removeEventListener('toggle', h)) }
+  }, [])
+
+  const scrollTo = (e, id) => {
+    e.preventDefault()
+    document.getElementById(id)?.scrollIntoView({ behavior: 'smooth' })
+  }
 
   return (
-    <div className="min-h-dvh flex flex-col">
-      <Nav />
+    <div className="nsh">
+      <header className="site">
+        <div className="wrap navbar">
+          <a className="brand" href="#top" onClick={(e) => scrollTo(e, 'top')}>NONSTOP<span className="dot">·</span>AI</a>
+          <nav className="nav-cta">
+            <a className="navlink hide-sm" href="#demo" onClick={(e) => scrollTo(e, 'demo')}>Demo</a>
+            <a className="navlink hide-sm" href="#pricing" onClick={(e) => scrollTo(e, 'pricing')}>Pricing</a>
+            <Link className="btn btn-primary" to={SIGNUP}>Get started</Link>
+          </nav>
+        </div>
+      </header>
+      <span id="top" />
 
-      <main className="flex-1">
-        {/* Hero */}
-        <section className="max-w-6xl mx-auto px-5 sm:px-8 pt-14 pb-16 sm:pt-20 sm:pb-24">
-          <div className="grid lg:grid-cols-2 gap-12 lg:gap-8 items-center">
-            <div className="text-center lg:text-left">
-              <span className="inline-flex items-center gap-2 rounded-full border border-ink-line px-3 py-1 font-mono text-[11px] tracking-widest text-paper-dim mb-6">
-                <span className="w-1.5 h-1.5 rounded-full bg-signal" />
-                AI OPERATING SYSTEMS FOR SERVICE BUSINESSES
-              </span>
-
-              <h1 className="font-display text-4xl sm:text-5xl font-semibold leading-[1.08] text-balance mb-5">
-                Every missed call is lost revenue.
-                <br />
-                <span className="text-signal">We make sure you never miss another.</span>
-              </h1>
-
-              <p className="text-paper-dim text-base sm:text-lg leading-relaxed max-w-md mx-auto lg:mx-0 mb-8">
-                NONSTOP AI builds complete AI operating systems — website, 24/7 AI
-                receptionist, booking and order capture, customer front desk — built for
-                your industry and fully set up for you.
-              </p>
-
-              <div className="flex flex-col sm:flex-row items-center gap-3 justify-center lg:justify-start">
-                <a
-                  href="#industries"
-                  className="inline-flex items-center justify-center gap-2 rounded-full px-6 py-3.5 font-semibold text-[15px] transition-colors duration-200 active:scale-[0.98] bg-signal text-ink hover:bg-signal-dim shadow-lg shadow-signal/20 w-full sm:w-auto"
-                >
-                  Choose your industry ↓
-                </a>
-                <Link
-                  to="/signup"
-                  className="text-paper-dim text-sm font-medium hover:text-paper transition-colors px-2 py-3.5"
-                >
-                  Get started →
-                </Link>
-              </div>
-
-              <p className="text-paper-faint text-xs mt-5 font-mono tracking-wide">
-                SETUP DONE FOR YOU · KEEP YOUR EXISTING NUMBER · LIVE FAST
-              </p>
+      {/* PROBLEM + SOLUTION */}
+      <section className="hero">
+        <div className="hero-glow" />
+        <div className="wrap hero-grid">
+          <div>
+            <div className="price-kicker"><span className="amt">£99</span><span className="per">/month</span></div>
+            <h1>Turn missed calls into <span className="hl">paying customers.</span></h1>
+            <p className="hero-sub"><b>A complete business system</b> — website, AI receptionist and booking capture, set up on your own number.</p>
+            <div className="hero-cta">
+              <a className="btn btn-live" href="#demo" onClick={(e) => scrollTo(e, 'demo')}>▶ Hear it answer</a>
+              <Link className="btn btn-ghost" to={SIGNUP}>Get started</Link>
             </div>
-
-            <CallTicket header={PLATFORM_TICKET.header} stages={PLATFORM_TICKET.stages} />
+            <ul className="hero-ticks">
+              <li>Keep your number</li><li>Live in 48 hours</li><li>£299 setup</li>
+            </ul>
           </div>
-        </section>
-
-        {/* Industry picker */}
-        <section id="industries" className="max-w-6xl mx-auto px-5 sm:px-8 py-16 border-t border-ink-line/70">
-          <h2 className="font-display text-2xl sm:text-3xl font-semibold mb-3 text-center">
-            Built for your business
-          </h2>
-          <p className="text-paper-dim text-center mb-10 max-w-md mx-auto">
-            One operating system per industry. Pick yours.
-          </p>
-
-          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6 sm:gap-5">
-            {VERTICALS.filter((v) => v.status === 'live').map((v) => (
-              <Link
-                key={v.slug}
-                to={`/${v.slug}`}
-                className="group rounded-2xl border border-signal/30 bg-ink-surface p-6 hover:border-signal transition-colors"
-              >
-                <div className="flex items-center justify-between mb-3">
-                  <span className="font-mono text-[11px] tracking-widest text-signal">
-                    {v.name.toUpperCase()}
-                  </span>
-                  <span className="inline-flex items-center gap-1.5 font-mono text-[10px] tracking-widest text-live">
-                    <span className="w-1.5 h-1.5 rounded-full bg-live animate-ping-slow" />
-                    LIVE
-                  </span>
-                </div>
-                <h3 className="font-display font-semibold text-lg mb-2">{v.shortLabel}</h3>
-                <p className="text-paper-dim text-sm leading-relaxed mb-4">{v.cardBlurb}</p>
-                <span className="text-signal text-sm font-medium group-hover:underline">
-                  Open {v.name} →
-                </span>
-              </Link>
-            ))}
-
-            {UPCOMING.map((u) => (
-              <div
-                key={u.name}
-                className="rounded-2xl border border-ink-line bg-ink-surface p-6 opacity-70"
-              >
-                <div className="flex items-center justify-between mb-3">
-                  <span className="font-mono text-[11px] tracking-widest text-paper-faint">
-                    {u.name.toUpperCase()} OS
-                  </span>
-                  <span className="font-mono text-[10px] tracking-widest text-paper-faint">
-                    COMING SOON
-                  </span>
-                </div>
-                <h3 className="font-display font-semibold text-lg mb-2">{u.name}</h3>
-                <p className="text-paper-dim text-sm leading-relaxed">{u.blurb}</p>
-              </div>
-            ))}
-          </div>
-        </section>
-
-        {/* The problem */}
-        <section className="max-w-6xl mx-auto px-5 sm:px-8 py-16 border-t border-ink-line/70">
-          <h2 className="font-display text-2xl sm:text-3xl font-semibold mb-10 text-center">
-            The revenue you never see leaving
-          </h2>
-          <div className="grid sm:grid-cols-3 gap-6 sm:gap-5">
-            {PROBLEMS.map((b) => (
-              <div key={b.title} className="rounded-2xl border border-ink-line bg-ink-surface p-6">
-                <h3 className="font-display font-semibold text-lg mb-2">{b.title}</h3>
-                <p className="text-paper-dim text-sm leading-relaxed">{b.body}</p>
-              </div>
-            ))}
-          </div>
-        </section>
-
-        {/* What every OS includes */}
-        <section className="max-w-6xl mx-auto px-5 sm:px-8 py-16 border-t border-ink-line/70">
-          <h2 className="font-display text-2xl sm:text-3xl font-semibold mb-3 text-center">
-            Every operating system includes
-          </h2>
-          <p className="text-paper-dim text-center mb-10 max-w-md mx-auto">
-            Not just an AI receptionist. A complete business system, tailored to your industry.
-          </p>
-          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6 sm:gap-5">
-            {INCLUDED.map((item) => (
-              <div key={item.title} className="rounded-2xl border border-ink-line bg-ink-surface p-6">
-                <h3 className="font-display font-semibold text-lg mb-2">{item.title}</h3>
-                <p className="text-paper-dim text-sm leading-relaxed">{item.body}</p>
-              </div>
-            ))}
-          </div>
-        </section>
-
-        {/* How it works */}
-        <section className="max-w-6xl mx-auto px-5 sm:px-8 py-16 border-t border-ink-line/70">
-          <h2 className="font-display text-2xl sm:text-3xl font-semibold mb-10 text-center">
-            How it works
-          </h2>
-          <div className="grid sm:grid-cols-3 gap-8 sm:gap-6">
-            {STEPS.map((s) => (
-              <div key={s.n}>
-                <span className="font-mono text-signal text-sm tracking-widest">{s.n}</span>
-                <h3 className="font-display font-semibold text-lg mt-2 mb-2">{s.title}</h3>
-                <p className="text-paper-dim text-sm leading-relaxed">{s.body}</p>
-              </div>
-            ))}
-          </div>
-        </section>
-
-        {/* Final CTA */}
-        <section className="max-w-6xl mx-auto px-5 sm:px-8 py-16 border-t border-ink-line/70">
-          <div className="max-w-3xl mx-auto text-center rounded-2xl border border-signal/30 bg-ink-surface p-8 sm:p-10 shadow-2xl shadow-black/20">
-            <h2 className="font-display text-2xl sm:text-3xl font-semibold mb-3">
-              Stop losing customers to a ringing phone.
-            </h2>
-            <p className="text-paper-dim text-sm sm:text-base leading-relaxed mb-7 max-w-xl mx-auto">
-              £299 setup, £99/month. Your complete operating system, built and launched for
-              you.
-            </p>
-            <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
-              <a
-                href="#industries"
-                className="inline-flex items-center justify-center gap-2 rounded-full px-6 py-3.5 font-semibold text-[15px] transition-colors duration-200 active:scale-[0.98] bg-signal text-ink hover:bg-signal-dim shadow-lg shadow-signal/20 w-full sm:w-auto"
-              >
-                Find your industry
-              </a>
-              <ButtonLink to="/signup" variant="ghost" className="w-full sm:w-auto">
-                Get started now
-              </ButtonLink>
+          <div className="callcard" aria-hidden="true">
+            <div className="bar"><span>Your front desk</span><span className="live-chip"><span className="pulse" /> Live</span></div>
+            <div className="call-row">
+              <div className="avatar">📞</div>
+              <div><div className="call-num">07911 224 488</div><div className="call-meta">Missed at 11:47pm</div></div>
+              <div className="call-status">Answered ✓</div>
+            </div>
+            <div className="transcript">
+              <div className="tline ai d1">“Good evening — where would you like picking up?”</div>
+              <div className="tline sys d2">✓ Booking captured · texted to your team</div>
             </div>
           </div>
-        </section>
-      </main>
+        </div>
+      </section>
 
-      <Footer />
+      {/* LIVE DEMO */}
+      <section className="demo" id="demo">
+        <div className="wrap">
+          <div className="center reveal">
+            <span className="eyebrow">Live demo · no signup</span>
+            <h2 className="title">Don't trust us. Phone it yourself.</h2>
+            <p className="sub">Two real AI lines, answering right now. Call like a customer would.</p>
+          </div>
+          <div className="demo-grid">
+            <div className="demo-card reveal">
+              <h3>This could be your taxi line.</h3>
+              <p>Book a taxi and hear it captured in seconds.</p>
+              <a className="btn btn-live callbtn" href="tel:+447449839233"><span className="cl">Call the live taxi demo</span><span className="cn">07449 839233</span></a>
+            </div>
+            <div className="demo-card reveal">
+              <h3>This could be your takeaway.</h3>
+              <p>Place an order and hear every detail captured.</p>
+              <a className="btn btn-live callbtn" href="tel:+447460045201"><span className="cl">Call the live takeaway demo</span><span className="cn">07460 045201</span></a>
+            </div>
+          </div>
+          <p className="demo-help">On a laptop? Dial from your phone — it's a real line answering 24/7.</p>
+        </div>
+      </section>
+
+      {/* WHY US */}
+      <section id="why">
+        <div className="wrap">
+          <div className="center reveal">
+            <span className="eyebrow">Why NONSTOP AI</span>
+            <h2 className="title">More bookings. Fewer missed customers.</h2>
+          </div>
+          <div className="why-rows reveal">
+            <div className="why-row">Never miss another customer.</div>
+            <div className="why-row">Open 24/7 — nights, weekends, the rush.</div>
+            <div className="why-row">Keep your existing number.</div>
+            <div className="why-row">Everything installed for you.</div>
+            <div className="why-row">No technical knowledge needed.</div>
+            <div className="why-row">Built for your industry.</div>
+          </div>
+        </div>
+      </section>
+
+      {/* PRICING */}
+      <section className="pricing" id="pricing">
+        <div className="wrap">
+          <div className="center reveal"><span className="eyebrow">Pricing</span><h2 className="title">One price. Everything included.</h2></div>
+          <div className="price-card reveal">
+            <div className="price-tag"><span className="big">£99</span><span className="per">/month</span></div>
+            <div className="price-setup">+ <b>£299</b> one-off setup</div>
+            <ul className="price-list">
+              <li>Professional website</li>
+              <li>24/7 AI receptionist</li>
+              <li>Booking &amp; order capture</li>
+              <li>SMS follow-ups to customers</li>
+              <li>Keep your existing number</li>
+              <li>Installed &amp; supported for you</li>
+            </ul>
+            <Link className="btn btn-primary price-cta" to={SIGNUP}>Get started</Link>
+            <p className="price-note">Secure checkout with Stripe.</p>
+          </div>
+        </div>
+      </section>
+
+      {/* FAQ */}
+      <section id="faq">
+        <div className="wrap">
+          <div className="center reveal"><span className="eyebrow">FAQ</span><h2 className="title">Good to know.</h2></div>
+          <div className="faq reveal">
+            <details open><summary>Keep my number? <span className="chev">+</span></summary><div className="ans">Yes. Calls route through the AI front desk on your existing number — nothing changes for your customers.</div></details>
+            <details><summary>How fast is setup? <span className="chev">+</span></summary><div className="ans">Live within 24–48 hours of signup. We build and connect everything for you.</div></details>
+            <details><summary>What if it can't answer something? <span className="chev">+</span></summary><div className="ans">It captures the details and can transfer to a number you choose, so a person can always pick up.</div></details>
+            <details><summary>Can I try it before I pay? <span className="chev">+</span></summary><div className="ans">Yes — call either live demo above. No signup, no card.</div></details>
+          </div>
+        </div>
+      </section>
+
+      {/* START */}
+      <section className="start">
+        <div className="wrap">
+          <h2 className="reveal">Stop losing customers to a ringing phone.</h2>
+          <p className="price-inline reveal"><b>£299</b> setup · <b>£99</b>/month · live in 48 hours</p>
+          <div className="start-cta reveal">
+            <Link className="btn btn-primary" to={SIGNUP} style={{ fontSize: '1.02rem', padding: '.85em 1.5em' }}>Get started</Link>
+            <a className="btn btn-live" href="#demo" onClick={(e) => scrollTo(e, 'demo')} style={{ fontSize: '1.02rem', padding: '.85em 1.5em' }}>Hear it answer</a>
+          </div>
+        </div>
+      </section>
+
+      <footer className="site">
+        <div className="wrap foot">
+          <span className="brand">NONSTOP<span className="dot" style={{ color: 'var(--signal)' }}>·</span>AI <span style={{ fontWeight: 400, color: 'var(--paper-faint)' }}>· UK</span></span>
+          <nav>
+            <Link to="/taxi">Taxi OS</Link>
+            <Link to="/food">FOOD OS</Link>
+            <a href="#demo" onClick={(e) => scrollTo(e, 'demo')}>Demo</a>
+            <a href="#pricing" onClick={(e) => scrollTo(e, 'pricing')}>Pricing</a>
+          </nav>
+        </div>
+      </footer>
+
+      <div className="mbar">
+        <a className="btn btn-live" href="#demo" onClick={(e) => scrollTo(e, 'demo')}>▶ Call a demo</a>
+        <Link className="btn btn-primary" to={SIGNUP}>Get started</Link>
+      </div>
     </div>
   )
 }
