@@ -95,6 +95,18 @@ export default async (req) => {
     opening_hours: String(payload.opening_hours).trim(),
     booking_required: Boolean(payload.booking_required),
     style_preset: String(payload.style_preset ?? 'professional').trim(),
+
+    // Onboarding v2 — business context only, no dispatch credentials.
+    // Field names match the Phase 9A "Normalize Intake Payload" node exactly.
+    // Empty strings are normalised to NULL by the workflow, so optional
+    // answers can be omitted safely.
+    business_address: String(payload.business_address ?? '').trim(),
+    booking_method: String(payload.booking_method ?? '').trim(),
+    booking_method_detail: String(payload.booking_method_detail ?? '').trim(),
+    booking_method_website: String(payload.booking_method_website ?? '').trim(),
+    keep_existing_number: Boolean(payload.keep_existing_number),
+    answering_247: Boolean(payload.answering_247),
+    booking_delivery: String(payload.booking_delivery ?? '').trim(),
   }
 
   // --- Step 1: Phase 9A intake ---

@@ -88,6 +88,36 @@ export default function VerticalLanding({ config }) {
           </div>
         </section>
 
+        {config.keepExisting && (
+          <section className="max-w-6xl mx-auto px-5 sm:px-8 py-16 border-t border-ink-line/70">
+            <div className="text-center mb-10">
+              <span className="inline-flex items-center gap-2 rounded-full border border-ink-line px-3 py-1 font-mono text-[11px] tracking-widest text-paper-dim mb-5">
+                <span className="w-1.5 h-1.5 rounded-full bg-live" />
+                {config.keepExisting.badge}
+              </span>
+              <h2 className="font-display text-2xl sm:text-3xl font-semibold mb-3">
+                {config.keepExisting.heading}
+              </h2>
+              <p className="text-paper-dim max-w-xl mx-auto">{config.keepExisting.sub}</p>
+            </div>
+
+            <div className="grid sm:grid-cols-2 gap-6 sm:gap-5 max-w-3xl mx-auto">
+              {config.keepExisting.items.map((item) => (
+                <div
+                  key={item.title}
+                  className="rounded-2xl border border-ink-line bg-ink-surface p-6"
+                >
+                  <h3 className="font-display font-semibold text-lg mb-2 flex items-start gap-2.5">
+                    <span className="mt-2 w-1.5 h-1.5 rounded-full bg-live shrink-0" />
+                    {item.title}
+                  </h3>
+                  <p className="text-paper-dim text-sm leading-relaxed">{item.body}</p>
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
+
         {config.demoPhone && (
           <section id="demo" className="max-w-6xl mx-auto px-5 sm:px-8 py-16 border-t border-ink-line/70">
             <div className="max-w-3xl mx-auto text-center rounded-2xl border border-signal/30 bg-ink-surface p-8 sm:p-10 shadow-2xl shadow-black/20">
@@ -142,6 +172,31 @@ export default function VerticalLanding({ config }) {
             ))}
           </div>
         </section>
+
+        {config.faq && (
+          <section id="faq" className="max-w-6xl mx-auto px-5 sm:px-8 py-16 border-t border-ink-line/70">
+            <h2 className="font-display text-2xl sm:text-3xl font-semibold mb-10 text-center">
+              Common questions
+            </h2>
+
+            <div className="max-w-2xl mx-auto space-y-3">
+              {config.faq.map((item) => (
+                <details
+                  key={item.q}
+                  className="group rounded-2xl border border-ink-line bg-ink-surface px-5 sm:px-6"
+                >
+                  <summary className="flex items-center justify-between gap-4 cursor-pointer list-none py-5 font-display font-semibold text-[15px] sm:text-base marker:hidden">
+                    {item.q}
+                    <span className="text-signal font-mono text-lg shrink-0 transition-transform duration-200 group-open:rotate-45">
+                      +
+                    </span>
+                  </summary>
+                  <p className="text-paper-dim text-sm leading-relaxed pb-5 -mt-1">{item.a}</p>
+                </details>
+              ))}
+            </div>
+          </section>
+        )}
 
         <section id="pricing" className="max-w-6xl mx-auto px-5 sm:px-8 py-16 border-t border-ink-line/70">
           <h2 className="font-display text-2xl sm:text-3xl font-semibold mb-3 text-center">

@@ -75,6 +75,30 @@ export default {
     },
   ],
 
+  keepExisting: {
+    badge: 'NOTHING TO RIP OUT',
+    heading: 'Keep everything you already use.',
+    sub: 'This sits on top of how your firm already works. Your drivers, your dispatch, your number, your process — all stay exactly as they are.',
+    items: [
+      {
+        title: 'Keep your existing number',
+        body: 'Customers carry on calling the same number they always have. Nothing to reprint, nothing to re-advertise.',
+      },
+      {
+        title: 'Keep your dispatch system',
+        body: 'We do not replace iCabbi, Autocab, TaxiCaller or whatever you run today. The AI answers the phone; your system keeps dispatching.',
+      },
+      {
+        title: 'Keep your drivers and your process',
+        body: 'Bookings reach your team by SMS and email, in the same shape they get them now. No new app for drivers to learn.',
+      },
+      {
+        title: 'Nothing to install',
+        body: 'No hardware, no software on your office machines, no engineer visit. We set it up and hand it over working.',
+      },
+    ],
+  },
+
   steps: [
     {
       n: '01',
@@ -88,8 +112,49 @@ export default {
     },
     {
       n: '03',
+      title: 'We check it with you',
+      body: 'You hear your own receptionist before a single customer does. Wording, areas covered and how it handles jobs — changed until you are happy.',
+    },
+    {
+      n: '04',
       title: 'Go live',
       body: 'Your taxi operating system goes live so customers can call, book and enquire 24/7.',
+    },
+    {
+      n: '05',
+      title: 'We keep it running',
+      body: 'Hosting, updates and support are included. Anything needs changing, you tell us and we change it.',
+    },
+  ],
+
+  faq: [
+    {
+      q: 'Do I have to change my phone number?',
+      a: 'No. Your existing number stays exactly as it is — calls simply route through the AI front desk first. Your customers never notice a difference.',
+    },
+    {
+      q: 'Will this replace my dispatch system?',
+      a: 'No. Your dispatch system stays exactly where it is. The AI answers the phone and captures the booking, then sends it to your team by SMS and email so it goes into dispatch the same way it does today.',
+    },
+    {
+      q: 'What happens if the AI cannot handle a call?',
+      a: 'It captures the details and can transfer the caller to a number you choose, so a person can always pick up. You decide which calls get passed straight through.',
+    },
+    {
+      q: 'How do bookings actually reach my drivers?',
+      a: 'By SMS and email from day one, to whichever numbers and addresses you tell us. Nothing changes for your drivers.',
+    },
+    {
+      q: 'How long until it is live?',
+      a: 'Typically 48 hours from signup. We build it, you check it, then it goes live.',
+    },
+    {
+      q: 'Can I hear it before I pay?',
+      a: 'Yes. Call the live taxi demo on this page and test it exactly like a customer would. No signup, no card.',
+    },
+    {
+      q: 'What if I want to cancel?',
+      a: 'The £99/month is a rolling monthly subscription. There is no long-term contract to sign.',
     },
   ],
 

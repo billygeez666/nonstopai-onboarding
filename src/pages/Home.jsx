@@ -1,6 +1,7 @@
 import { useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import useMeta from '../hooks/useMeta.js'
+import { CONTACT } from '../config/contact.js'
 import './Home.css'
 
 const META = {
@@ -156,6 +157,74 @@ export default function Home() {
             <details><summary>How fast is setup? <span className="chev">+</span></summary><div className="ans">Live within 24–48 hours of signup. We build and connect everything for you.</div></details>
             <details><summary>What if it can't answer something? <span className="chev">+</span></summary><div className="ans">It captures the details and can transfer to a number you choose, so a person can always pick up.</div></details>
             <details><summary>Can I try it before I pay? <span className="chev">+</span></summary><div className="ans">Yes — call either live demo above. No signup, no card.</div></details>
+          </div>
+        </div>
+      </section>
+
+      {/* FOUNDER */}
+      <section className="founder" id="founder">
+        <div className="wrap">
+          <div className="founder-grid reveal">
+            <div className="founder-photo">
+              <img
+                src="/founder.webp"
+                width="640"
+                height="800"
+                loading="lazy"
+                decoding="async"
+                alt={`${CONTACT.founderName}, ${CONTACT.founderRole}`}
+              />
+            </div>
+            <div className="founder-copy">
+              <span className="eyebrow">Who you're dealing with</span>
+              <h2 className="title">You're not buying from a faceless company.</h2>
+              <p className="founder-lede">
+                I'm {CONTACT.founderShort} — I build every system myself, and I'm the
+                person you'll speak to. Not a call centre, not a reseller, not a chatbot
+                pretending to be support.
+              </p>
+              <p className="founder-body">
+                I started Nonstop AI because good businesses lose real money every week to
+                a phone nobody can answer. If something isn't right, you call me and I fix
+                it. That's the whole arrangement.
+              </p>
+              <div className="founder-sig">
+                <span className="founder-name">{CONTACT.founderName}</span>
+                <span className="founder-role">{CONTACT.founderRole}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* CONTACT ALEX */}
+      <section className="contact" id="contact">
+        <div className="wrap">
+          <div className="center reveal">
+            <span className="eyebrow">Talk to a human</span>
+            <h2 className="title">Questions? Speak to {CONTACT.founderShort} directly.</h2>
+            <p className="sub">
+              No sales team, no ticket queue. You get the founder.
+            </p>
+          </div>
+          <div className="contact-grid reveal">
+            <a className="contact-card" href={`tel:${CONTACT.phone}`}>
+              <span className="contact-label">Call or text</span>
+              <span className="contact-value">{CONTACT.phoneDisplay}</span>
+            </a>
+            <a className="contact-card" href={`mailto:${CONTACT.email}`}>
+              <span className="contact-label">Email</span>
+              <span className="contact-value">{CONTACT.email}</span>
+            </a>
+            <a
+              className="contact-card"
+              href={CONTACT.facebook}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              <span className="contact-label">Facebook</span>
+              <span className="contact-value">Message {CONTACT.founderShort}</span>
+            </a>
           </div>
         </div>
       </section>
