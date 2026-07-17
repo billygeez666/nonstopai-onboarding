@@ -164,3 +164,22 @@
 @media(prefers-reduced-motion:reduce){  .nsh *{animation:none!important;scroll-behavior:auto!important;transition:none!important}
   .nsh .reveal, .nsh .js .reveal{opacity:1!important;transform:none!important}
 }
+  /* FOUNDER */
+  .nsh .founder-grid{display:grid;gap:24px;align-items:center}
+@media(min-width:820px){  .nsh .founder-grid{grid-template-columns:.8fr 1.2fr;gap:40px}
+}  .nsh .founder-grid>*{min-width:0}
+  .nsh .founder-photo{border:1px solid var(--line);border-radius:var(--r-lg);overflow:hidden;background:var(--ink-1);max-width:320px;margin:0 auto;width:100%}
+  .nsh .founder-photo img{display:block;width:100%;height:auto;aspect-ratio:640/800;object-fit:cover}
+  .nsh .founder-copy .eyebrow{display:block;margin-bottom:12px}
+  .nsh .founder-lede{color:var(--paper);font-size:1.06rem;margin-top:14px;line-height:1.55}
+  .nsh .founder-body{color:var(--paper-dim);margin-top:12px;line-height:1.6}
+  .nsh .founder-sig{margin-top:18px;padding-top:16px;border-top:1px solid var(--line);display:flex;flex-direction:column;gap:2px}
+  .nsh .founder-name{font-family:var(--fd);font-weight:700;font-size:1rem}
+  .nsh .founder-role{font-family:var(--fm);font-size:.72rem;letter-spacing:.12em;text-transform:uppercase;color:var(--paper-faint)}
+  /* CONTACT ALEX */
+  .nsh .contact-grid{display:grid;gap:11px;margin-top:18px}
+@media(min-width:640px){  .nsh .contact-grid{grid-template-columns:repeat(3,1fr)}
+}  .nsh .contact-card{display:flex;flex-direction:column;gap:5px;padding:16px 18px;border:1px solid var(--line);border-radius:var(--r);background:var(--ink-1);transition:border-color .15s ease,background .15s ease;min-width:0}
+  .nsh .contact-card:hover{border-color:var(--signal);background:var(--ink-2)}
+  .nsh .contact-label{font-family:var(--fm);font-size:.68rem;letter-spacing:.14em;text-transform:uppercase;color:var(--paper-faint)}
+  .nsh .contact-value{font-family:var(--fd);font-weight:600;font-size:.98rem;color:var(--paper);overflow-wrap:anywhere}

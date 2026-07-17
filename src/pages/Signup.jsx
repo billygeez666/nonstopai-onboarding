@@ -18,6 +18,53 @@ const STYLE_PRESETS = [
   { value: 'direct', label: 'Fast & direct' },
 ]
 
+// Booking sources, grouped. These are business-context answers only — we never
+// ask for dispatch API credentials here. Values are stored in projects.booking_method.
+const BOOKING_SOURCE_GROUPS = [
+  {
+    group: 'Over the phone',
+    options: [
+      { value: 'phone_office', label: 'Customers ring the office' },
+      { value: 'phone_mobile', label: 'Customers ring a mobile' },
+    ],
+  },
+  {
+    group: 'Online',
+    options: [
+      { value: 'website', label: 'Our website' },
+      { value: 'app', label: 'Our own app' },
+    ],
+  },
+  {
+    group: 'Through a dispatch system',
+    options: [
+      { value: 'dispatch_icabbi', label: 'iCabbi' },
+      { value: 'dispatch_autocab', label: 'Autocab' },
+      { value: 'dispatch_taxicaller', label: 'TaxiCaller' },
+      { value: 'dispatch_other', label: 'Another dispatch system' },
+    ],
+  },
+  {
+    group: 'Something else',
+    options: [
+      { value: 'walk_in', label: 'Walk-ins and repeat customers' },
+      { value: 'other', label: 'Other' },
+    ],
+  },
+]
+
+// Dashboard is deliberately excluded — it does not exist yet.
+const BOOKING_DELIVERY = [
+  { value: 'sms', label: 'By SMS' },
+  { value: 'email', label: 'By email' },
+  { value: 'decide_together', label: "We'll decide together" },
+]
+
+// Sources that need a free-text follow-up to be useful to us.
+const NEEDS_DETAIL = ['dispatch_other', 'other']
+// Sources where knowing the current site helps us build the new one.
+const NEEDS_WEBSITE = ['website', 'app']
+
 const initialForm = {
   business_name: '',
   contact_name: '',
@@ -25,11 +72,18 @@ const initialForm = {
   contact_phone: '',
   niche: NICHES[0]?.value || 'taxi',
   city: '',
+  business_address: '',
   business_description: '',
   transfer_number: '',
   opening_hours: '',
   booking_required: true,
   style_preset: 'professional',
+  booking_method: 'phone_office',
+  booking_method_detail: '',
+  booking_method_website: '',
+  keep_existing_number: true,
+  answering_247: true,
+  booking_delivery: 'sms',
 }
 
 function Field({ label, hint, children, htmlFor }) {
@@ -152,6 +206,20 @@ export default function Signup() {
               </Field>
             </div>
 
+            <Field
+              label="BUSINESS ADDRESS"
+              htmlFor="business_address"
+              hint="Optional — used on your website if you want it shown."
+            >
+              <input
+                id="business_address"
+                className={inputClass}
+                placeholder="e.g. 14 Mill Street, Bolton, BL1 1AA"
+                value={form.business_address}
+                onChange={(e) => update('business_address', e.target.value)}
+              />
+            </Field>
+
             <div className="grid sm:grid-cols-2 gap-5">
               <Field label="EMAIL" htmlFor="contact_email">
                 <input
@@ -213,6 +281,136 @@ export default function Signup() {
                 onChange={(e) => update('business_description', e.target.value)}
               />
             </Field>
+
+            <div className="pt-2 border-t border-ink-line">
+              <h2 className="font-display text-lg font-semibold mt-6 mb-1">
+                How you take bookings today
+              </h2>
+              <p className="text-paper-dim text-sm leading-relaxed mb-5">
+                This just helps us build the right system. Your receptionist goes live in
+                48 hours either way.
+              </p>
+            </div>
+
+            <Field
+              label="WHERE DO MOST OF YOUR BOOKINGS COME FROM TODAY?"
+              htmlFor="booking_method"
+            >
+              <select
+                id="booking_method"
+                className={inputClass}
+                value={form.booking_method}
+                onChange={(e) => update('booking_method', e.target.value)}
+              >
+                {BOOKING_SOURCE_GROUPS.map((g) => (
+                  <optgroup key={g.group} label={g.group}>
+                    {g.options.map((o) => (
+                      <option key={o.value} value={o.value}>
+                        {o.label}
+                      </option>
+                    ))}
+                  </optgroup>
+                ))}
+              </select>
+            </Field>
+
+            {NEEDS_DETAIL.includes(form.booking_method) && (
+              <Field
+                label="WHICH SYSTEM DO YOU USE?"
+                htmlFor="booking_method_detail"
+                hint="Just the name is fine — we'll look into it from there."
+              >
+                <input
+                  id="booking_method_detail"
+                  className={inputClass}
+                  placeholder="e.g. Cordic, Ghost, an in-house system"
+                  value={form.booking_method_detail}
+                  onChange={(e) => update('booking_method_detail', e.target.value)}
+                />
+              </Field>
+            )}
+
+            {NEEDS_WEBSITE.includes(form.booking_method) && (
+              <Field
+                label="YOUR CURRENT WEBSITE OR APP"
+                htmlFor="booking_method_website"
+                hint="So we can match what already works for you."
+              >
+                <input
+                  id="booking_method_website"
+                  className={inputClass}
+                  placeholder="e.g. boltontaxis.co.uk"
+                  value={form.booking_method_website}
+                  onChange={(e) => update('booking_method_website', e.target.value)}
+                />
+              </Field>
+            )}
+
+            <Field
+              label="HOW SHOULD BOOKINGS REACH YOU?"
+              htmlFor="booking_delivery"
+              hint="Bookings arrive from day one. You can change this any time."
+            >
+              <select
+                id="booking_delivery"
+                className={inputClass}
+                value={form.booking_delivery}
+                onChange={(e) => update('booking_delivery', e.target.value)}
+              >
+                {BOOKING_DELIVERY.map((d) => (
+                  <option key={d.value} value={d.value}>
+                    {d.label}
+                  </option>
+                ))}
+              </select>
+            </Field>
+
+            <div className="flex items-start gap-3 rounded-xl border border-ink-line bg-ink-surface px-4 py-4">
+              <input
+                id="keep_existing_number"
+                type="checkbox"
+                className="mt-1 w-4 h-4 accent-signal shrink-0"
+                checked={form.keep_existing_number}
+                onChange={(e) => update('keep_existing_number', e.target.checked)}
+              />
+              <label
+                htmlFor="keep_existing_number"
+                className="text-sm text-paper-dim leading-relaxed"
+              >
+                <span className="text-paper font-medium">Keep my existing number</span>
+                <br />
+                Your customers carry on calling the same number. Nothing to reprint or
+                re-advertise.
+              </label>
+            </div>
+
+            <div className="flex items-start gap-3 rounded-xl border border-ink-line bg-ink-surface px-4 py-4">
+              <input
+                id="answering_247"
+                type="checkbox"
+                className="mt-1 w-4 h-4 accent-signal shrink-0"
+                checked={form.answering_247}
+                onChange={(e) => update('answering_247', e.target.checked)}
+              />
+              <label htmlFor="answering_247" className="text-sm text-paper-dim leading-relaxed">
+                <span className="text-paper font-medium">Answer calls 24/7</span>
+                <br />
+                Recommended — nights, weekends and the rush are when most calls get missed.
+                Untick to answer only during your opening hours.
+              </label>
+            </div>
+
+            <div className="rounded-xl border border-ink-line bg-ink-surface px-4 py-4">
+              <p className="text-sm text-paper font-medium mb-1.5">
+                We're not asking for any logins or API keys.
+              </p>
+              <p className="text-sm text-paper-dim leading-relaxed">
+                Everything above is background so we can build your system properly. If
+                connecting your dispatch system ever turns out to be worth doing, we'll
+                walk you through it separately — and only ever with credentials you're
+                permitted to share. It never holds up your go-live.
+              </p>
+            </div>
 
             <div className="grid sm:grid-cols-2 gap-5">
               <Field
