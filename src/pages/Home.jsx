@@ -189,8 +189,22 @@ export default function Home() {
                 it. That's the whole arrangement.
               </p>
               <div className="founder-sig">
-                <span className="founder-name">{CONTACT.founderName}</span>
-                <span className="founder-role">{CONTACT.founderRole}</span>
+                <span className="founder-name">{CONTACT.founderShort}</span>
+                <span className="founder-role">Founder, Nonstop AI</span>
+                <a className="founder-contact" href={`tel:${CONTACT.phone}`}>
+                  {CONTACT.phoneDisplay}
+                </a>
+                <a className="founder-contact" href={`mailto:${CONTACT.email}`}>
+                  {CONTACT.email}
+                </a>
+                <a
+                  className="founder-contact"
+                  href={CONTACT.facebook}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  Facebook
+                </a>
               </div>
             </div>
           </div>
