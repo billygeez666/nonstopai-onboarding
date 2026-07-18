@@ -168,29 +168,27 @@ export default function Home() {
             <div className="founder-photo">
               <img
                 src="/founder.webp"
-                width="640"
-                height="800"
+                width="112"
+                height="112"
                 loading="lazy"
                 decoding="async"
-                alt={`${CONTACT.founderName}, ${CONTACT.founderRole}`}
+                alt={`${CONTACT.founderShort}, Founder of Nonstop AI`}
               />
             </div>
             <div className="founder-copy">
-              <span className="eyebrow">Who you're dealing with</span>
-              <h2 className="title">You're not buying from a faceless company.</h2>
-              <p className="founder-lede">
-                I'm {CONTACT.founderShort} — I build every system myself, and I'm the
-                person you'll speak to. Not a call centre, not a reseller, not a chatbot
-                pretending to be support.
-              </p>
+              <h2 className="title">Meet the founder</h2>
               <p className="founder-body">
-                I started Nonstop AI because good businesses lose real money every week to
-                a phone nobody can answer. If something isn't right, you call me and I fix
-                it. That's the whole arrangement.
+                I help UK taxi firms recover lost bookings with professional websites and a
+                24/7 AI receptionist. You'll deal directly with me from setup to ongoing
+                support.
               </p>
               <div className="founder-sig">
-                <span className="founder-name">{CONTACT.founderName}</span>
-                <span className="founder-role">{CONTACT.founderRole}</span>
+                <span className="founder-name">{CONTACT.founderShort}</span>
+                <span className="founder-role">Founder, Nonstop AI</span>
+              </div>
+              <div className="founder-contact">
+                <a href={`tel:${CONTACT.phone}`}>{CONTACT.phoneDisplay}</a>
+                <a href={`mailto:${CONTACT.email}`}>{CONTACT.email}</a>
               </div>
             </div>
           </div>
@@ -205,58 +203,4 @@ export default function Home() {
             <h2 className="title">Questions? Speak to {CONTACT.founderShort} directly.</h2>
             <p className="sub">
               No sales team, no ticket queue. You get the founder.
-            </p>
-          </div>
-          <div className="contact-grid reveal">
-            <a className="contact-card" href={`tel:${CONTACT.phone}`}>
-              <span className="contact-label">Call or text</span>
-              <span className="contact-value">{CONTACT.phoneDisplay}</span>
-            </a>
-            <a className="contact-card" href={`mailto:${CONTACT.email}`}>
-              <span className="contact-label">Email</span>
-              <span className="contact-value">{CONTACT.email}</span>
-            </a>
-            <a
-              className="contact-card"
-              href={CONTACT.facebook}
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              <span className="contact-label">Facebook</span>
-              <span className="contact-value">Message {CONTACT.founderShort}</span>
-            </a>
-          </div>
-        </div>
-      </section>
-
-      {/* START */}
-      <section className="start">
-        <div className="wrap">
-          <h2 className="reveal">Stop losing customers to a ringing phone.</h2>
-          <p className="price-inline reveal"><b>£299</b> setup · <b>£99</b>/month · live in 48 hours</p>
-          <div className="start-cta reveal">
-            <Link className="btn btn-primary" to={SIGNUP} style={{ fontSize: '1.02rem', padding: '.85em 1.5em' }}>Get started</Link>
-            <a className="btn btn-live" href="#demo" onClick={(e) => scrollTo(e, 'demo')} style={{ fontSize: '1.02rem', padding: '.85em 1.5em' }}>Hear it answer</a>
-          </div>
-        </div>
-      </section>
-
-      <footer className="site">
-        <div className="wrap foot">
-          <span className="brand">NONSTOP<span className="dot" style={{ color: 'var(--signal)' }}>·</span>AI <span style={{ fontWeight: 400, color: 'var(--paper-faint)' }}>· UK</span></span>
-          <nav>
-            <Link to="/taxi">Taxi OS</Link>
-            <Link to="/food">FOOD OS</Link>
-            <a href="#demo" onClick={(e) => scrollTo(e, 'demo')}>Demo</a>
-            <a href="#pricing" onClick={(e) => scrollTo(e, 'pricing')}>Pricing</a>
-          </nav>
-        </div>
-      </footer>
-
-      <div className="mbar">
-        <a className="btn btn-live" href="#demo" onClick={(e) => scrollTo(e, 'demo')}>▶ Call a demo</a>
-        <Link className="btn btn-primary" to={SIGNUP}>Get started</Link>
-      </div>
-    </div>
-  )
-}
+            
