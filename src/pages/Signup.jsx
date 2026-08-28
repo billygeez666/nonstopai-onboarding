@@ -12,6 +12,16 @@ import { liveVerticals, getVertical } from '../config/verticals/index.js'
 // /food page submits 'takeaway'), which must match pathway_templates.niche.
 const NICHES = liveVerticals().map((v) => ({ value: v.signupValue, label: v.shortLabel }))
 
+// "Other Business" is a UI-only option, not a real vertical/niche. No AI
+// receptionist pathway exists for arbitrary business types yet, and the
+// Phase 9A intake webhook hard-rejects any niche outside the active
+// pathway_templates rows (currently just taxi/takeaway) with an HTTP 400.
+// So this value is NEVER sent to /api/start-onboarding — selecting it
+// routes submission to a separate lead-capture path (see handleSubmit)
+// that leaves the Taxi/Takeaway checkout flow completely untouched.
+const OTHER_BUSINESS_VALUE = 'other'
+const NICHE_OPTIONS = [...NICHES, { value: OTHER_BUSINESS_VALUE, label: 'Other Business' }]
+
 const STYLE_PRESETS = [
   { value: 'professional', label: 'Professional & efficient' },
   { value: 'friendly', label: 'Warm & friendly' },
@@ -118,13 +128,46 @@ export default function Signup() {
     ...initialForm,
     niche: lockedVertical ? lockedVertical.signupValue : initialForm.niche,
   }))
-  const [status, setStatus] = useState('idle') // idle | submitting | error
+  const [otherBusinessType, setOtherBusinessType] = useState('')
+  const [status, setStatus] = useState('idle') // idle | submitting | error | submitted
   const [error, setError] = useState('')
 
   const nicheLocked = !!lockedVertical || NICHES.length === 1
+  const isOtherBusiness = form.niche === OTHER_BUSINESS_VALUE
 
   function update(field, value) {
     setForm((f) => ({ ...f, [field]: value }))
+  }
+
+  // "Other Business" leads: captured via Netlify Forms (no code/API keys/DB
+  // needed) instead of the paid checkout flow, since no receptionist
+  // pathway exists yet for a custom business type. Entirely separate branch
+  // from the Taxi/Takeaway path below, which is untouched.
+  async function submitOtherBusinessLead() {
+    const body = new URLSearchParams({
+      'form-name': 'other-business-lead',
+      business_name: form.business_name,
+      contact_name: form.contact_name,
+      contact_email: form.contact_email,
+      contact_phone: form.contact_phone,
+      city: form.city,
+      business_type_other: otherBusinessType,
+      business_description: form.business_description,
+      opening_hours: form.opening_hours,
+      transfer_number: form.transfer_number,
+    })
+
+    const res = await fetch('/', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: body.toString(),
+    })
+
+    if (!res.ok) {
+      throw new Error('Something went wrong. Please try again.')
+    }
+
+    setStatus('submitted')
   }
 
   async function handleSubmit(e) {
@@ -133,6 +176,11 @@ export default function Signup() {
     setError('')
 
     try {
+      if (isOtherBusiness) {
+        await submitOtherBusinessLead()
+        return
+      }
+
       const res = await fetch('/api/start-onboarding', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -152,6 +200,30 @@ export default function Signup() {
     }
   }
 
+  // "Other Business" leads don't go through checkout — show a plain
+  // confirmation instead of redirecting to Stripe. Taxi/Takeaway still
+  // redirect via window.location.href in handleSubmit above and never
+  // reach this branch.
+  if (status === 'submitted') {
+    return (
+      <div className="min-h-dvh flex flex-col">
+        <Nav />
+        <main className="flex-1">
+          <section className="max-w-xl mx-auto px-5 sm:px-8 pt-14 pb-20 text-center">
+            <h1 className="font-display text-3xl font-semibold mb-3 text-balance">
+              Thanks — got it.
+            </h1>
+            <p className="text-paper-dim leading-relaxed max-w-sm mx-auto">
+              We've received your details. We'll be in touch to confirm we can set up NONSTOP
+              AI for your type of business.
+            </p>
+          </section>
+        </main>
+        <Footer />
+      </div>
+    )
+  }
+
   return (
     <div className="min-h-dvh flex flex-col">
       <Nav />
@@ -160,14 +232,15 @@ export default function Signup() {
         <section className="max-w-xl mx-auto px-5 sm:px-8 pt-10 pb-20">
           <div className="mb-8">
             <span className="font-mono text-[11px] tracking-widest text-signal">
-              STEP 1 OF 2
+              {isOtherBusiness ? 'GET IN TOUCH' : 'STEP 1 OF 2'}
             </span>
             <h1 className="font-display text-3xl font-semibold mt-2 mb-2">
               Tell us about your business
             </h1>
             <p className="text-paper-dim text-sm leading-relaxed">
-              Takes about two minutes. You'll pay securely on the next screen — nothing is
-              charged until then.
+              {isOtherBusiness
+                ? "Takes about two minutes. We'll get back to you to confirm availability for your business type — nothing is charged today."
+                : "Takes about two minutes. You'll pay securely on the next screen — nothing is charged until then."}
             </p>
           </div>
 
@@ -253,7 +326,7 @@ export default function Signup() {
                 onChange={(e) => update('niche', e.target.value)}
                 disabled={nicheLocked}
               >
-                {NICHES.map((n) => (
+                {NICHE_OPTIONS.map((n) => (
                   <option key={n.value} value={n.value}>
                     {n.label}
                   </option>
@@ -265,6 +338,22 @@ export default function Signup() {
                 </p>
               )}
             </Field>
+
+            {isOtherBusiness && (
+              <Field
+                label="WHAT TYPE OF BUSINESS DO YOU RUN?"
+                htmlFor="other_business_type"
+              >
+                <input
+                  id="other_business_type"
+                  required
+                  className={inputClass}
+                  placeholder="e.g. Hotel, dentist, salon, estate agent, plumber…"
+                  value={otherBusinessType}
+                  onChange={(e) => setOtherBusinessType(e.target.value)}
+                />
+              </Field>
+            )}
 
             <Field
               label="WHAT SHOULD WE KNOW ABOUT YOUR BUSINESS?"
@@ -477,11 +566,15 @@ export default function Signup() {
             )}
 
             <Button type="submit" className="w-full" disabled={status === 'submitting'}>
-              {status === 'submitting' ? 'Setting up…' : 'Continue to payment'}
+              {status === 'submitting'
+                ? 'Setting up…'
+                : isOtherBusiness
+                  ? 'Send my details'
+                  : 'Continue to payment'}
             </Button>
 
             <p className="text-paper-faint text-xs text-center font-mono tracking-wide">
-              SECURE CHECKOUT BY STRIPE
+              {isOtherBusiness ? "WE'LL BE IN TOUCH SHORTLY" : 'SECURE CHECKOUT BY STRIPE'}
             </p>
           </form>
         </section>
