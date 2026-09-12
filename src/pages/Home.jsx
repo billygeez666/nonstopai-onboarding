@@ -189,7 +189,7 @@ export default function Home() {
           <div className="wrap">
             <div className="sechead center">
               <span className="eyebrow">Pricing</span>
-              <h2>One price. <span className="gt">Everything included.</span></h2>
+              <h2>Everything you need to <span className="gt">stop missing customers.</span></h2>
             </div>
             <div className="pricecard">
               <div className="ptag"><span className="big gt">£99</span><span className="per">/ month</span></div>
