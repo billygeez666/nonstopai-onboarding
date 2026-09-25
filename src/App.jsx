@@ -1,4 +1,6 @@
-import { Routes, Route } from 'react-router-dom'
+import { useEffect } from 'react'
+import { Routes, Route, useLocation } from 'react-router-dom'
+import { trackPageView, captureAttribution } from './lib/metaPixel.js'
 import Home from './pages/Home.jsx'
 import VerticalLanding from './pages/VerticalLanding.jsx'
 import Signup from './pages/Signup.jsx'
@@ -8,6 +10,14 @@ import NotFound from './pages/NotFound.jsx'
 import { VERTICALS } from './config/verticals/index.js'
 
 export default function App() {
+  const location = useLocation()
+
+  // Meta PageView on first load and on every SPA route change.
+  useEffect(() => {
+    captureAttribution(location.search)
+    trackPageView(location.pathname + location.search)
+  }, [location.pathname, location.search])
+
   return (
     <Routes>
       {/* Platform homepage - industry picker renders from the registry */}

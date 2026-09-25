@@ -4,6 +4,7 @@ import Nav from '../components/Nav.jsx'
 import Footer from '../components/Footer.jsx'
 import { Button } from '../components/Button.jsx'
 import { liveVerticals, getVertical } from '../config/verticals/index.js'
+import { newEventId, trackLead, getAttribution } from '../lib/metaPixel.js'
 
 // The niche options are derived from the vertical registry. Only verticals
 // with status 'live' appear — which per the registry rule means their
@@ -144,6 +145,7 @@ export default function Signup() {
   // pathway exists yet for a custom business type. Entirely separate branch
   // from the Taxi/Takeaway path below, which is untouched.
   async function submitOtherBusinessLead() {
+    const eventId = newEventId()
     const body = new URLSearchParams({
       'form-name': 'other-business-lead',
       business_name: form.business_name,
@@ -155,6 +157,8 @@ export default function Signup() {
       business_description: form.business_description,
       opening_hours: form.opening_hours,
       transfer_number: form.transfer_number,
+      event_id: eventId,
+      attribution: getAttribution(),
     })
 
     const res = await fetch('/', {
@@ -166,6 +170,9 @@ export default function Signup() {
     if (!res.ok) {
       throw new Error('Something went wrong. Please try again.')
     }
+
+    // Meta Lead fires ONLY after the submission was accepted (2xx).
+    trackLead(eventId, { content_name: 'other-business-lead' })
 
     setStatus('submitted')
   }
