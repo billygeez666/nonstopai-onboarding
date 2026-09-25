@@ -1,7 +1,7 @@
 // Meta Pixel helpers — NONSTOP AI dataset 1748159716430306.
-// The base code (fbq init) lives in index.html. PageView is fired ONLY from
-// here (initial load + every SPA route change) — automatic pushState
-// tracking is disabled in index.html so nothing is double-counted.
+// The base code (fbq init + initial PageView) lives in index.html. SPA route
+// changes are tracked as PageView automatically by fbevents.js (pushState),
+// so no manual PageView calls are made from the app.
 
 const ATTR_KEY = 'nsai_attribution'
 const ATTR_PARAMS = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term', 'fbclid']
@@ -12,13 +12,6 @@ function fbqSafe(...args) {
   } catch {
     /* tracking must never break the site */
   }
-}
-
-let lastPath = null
-export function trackPageView(path) {
-  if (path === lastPath) return // guards React StrictMode double effects
-  lastPath = path
-  fbqSafe('track', 'PageView')
 }
 
 // Unique ID shared by the browser Lead event and the stored lead, so a later

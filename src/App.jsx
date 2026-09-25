@@ -1,6 +1,6 @@
 import { useEffect } from 'react'
 import { Routes, Route, useLocation } from 'react-router-dom'
-import { trackPageView, captureAttribution } from './lib/metaPixel.js'
+import { captureAttribution } from './lib/metaPixel.js'
 import Home from './pages/Home.jsx'
 import VerticalLanding from './pages/VerticalLanding.jsx'
 import Signup from './pages/Signup.jsx'
@@ -12,11 +12,11 @@ import { VERTICALS } from './config/verticals/index.js'
 export default function App() {
   const location = useLocation()
 
-  // Meta PageView on first load and on every SPA route change.
+  // Remember first-touch UTM/fbclid for lead attribution. PageView itself is
+  // handled by the pixel (index.html + automatic pushState tracking).
   useEffect(() => {
     captureAttribution(location.search)
-    trackPageView(location.pathname + location.search)
-  }, [location.pathname, location.search])
+  }, [location.search])
 
   return (
     <Routes>
