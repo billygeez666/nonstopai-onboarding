@@ -1,0 +1,313 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>AI Receptionist for UK Trades — NONSTOP AI</title>
+<meta name="description" content="A 24/7 AI receptionist that answers your phone, takes the job details and texts them to you. Ring it yourself and hear it.">
+<meta name="robots" content="noindex,nofollow">
+<style>
+:root{
+  --ink:#ffffff; --ink-dim:#a8adbd; --ink-faint:#6f7486;
+  --bg:#07070b; --surface:#0e0f16; --surface-2:#13141d; --line:#232535;
+  --blue:#2f6bff; --violet:#8b3cf6; --magenta:#f0379a;
+  --grad:linear-gradient(100deg,var(--blue) 0%,var(--violet) 52%,var(--magenta) 100%);
+  --r:16px; --maxw:620px;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--bg);color:var(--ink);
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Roboto,Helvetica,Arial,sans-serif;
+  line-height:1.5;overflow-x:hidden}
+.wrap{max-width:var(--maxw);margin:0 auto;padding:0 20px}
+section{padding:48px 0;border-top:1px solid var(--line)}
+section:first-of-type{border-top:0}
+h1,h2,h3{margin:0 0 14px;line-height:1.15;letter-spacing:-.02em;font-weight:700}
+h1{font-size:clamp(30px,8vw,44px)}
+h2{font-size:clamp(22px,5.5vw,28px)}
+h3{font-size:17px;margin-bottom:6px}
+p{margin:0 0 14px;color:var(--ink-dim);font-size:16.5px}
+p.lead{color:var(--ink);font-size:18px}
+.grad{background:var(--grad);-webkit-background-clip:text;background-clip:text;color:transparent}
+.eyebrow{font-size:12px;letter-spacing:.16em;text-transform:uppercase;color:var(--ink-faint);
+  font-weight:600;margin-bottom:14px}
+
+/* header */
+header{padding:20px 0 8px}
+.logo{display:flex;align-items:center;gap:10px;font-weight:700;letter-spacing:-.01em;font-size:16px}
+.logo .mark{width:26px;height:26px;border-radius:7px;background:var(--grad);flex:none}
+
+/* hero */
+.hero{padding-top:28px}
+.glow{position:absolute;inset:-40% -30% auto;height:460px;background:
+  radial-gradient(42% 52% at 22% 40%,rgba(47,107,255,.26),transparent 70%),
+  radial-gradient(40% 50% at 78% 30%,rgba(240,55,154,.20),transparent 70%);
+  filter:blur(26px);pointer-events:none;z-index:0}
+.hero-inner{position:relative;z-index:1}
+
+/* call button */
+.call{display:flex;align-items:center;justify-content:center;gap:12px;
+  width:100%;min-height:62px;border-radius:14px;background:var(--grad);
+  color:#fff;text-decoration:none;font-size:19px;font-weight:700;letter-spacing:-.01em;
+  box-shadow:0 10px 30px -10px rgba(139,60,246,.6);margin:4px 0 10px}
+.call:active{transform:translateY(1px)}
+.call .num{font-variant-numeric:tabular-nums}
+.call-sub{font-size:13.5px;color:var(--ink-faint);text-align:center;margin:0 0 4px}
+.ghost{display:block;text-align:center;width:100%;min-height:52px;line-height:52px;
+  border:1px solid var(--line);border-radius:14px;color:var(--ink);text-decoration:none;
+  font-weight:600;font-size:16px;background:var(--surface)}
+
+/* media */
+.media{position:relative;border:1px solid var(--line);border-radius:var(--r);overflow:hidden;
+  background:var(--surface);margin:0 0 14px}
+.media video{display:block;width:100%;height:auto}
+.ph{aspect-ratio:9/16;max-height:62vh;display:flex;flex-direction:column;align-items:center;
+  justify-content:center;gap:10px;color:var(--ink-faint);text-align:center;padding:24px;
+  background:radial-gradient(60% 50% at 50% 40%,rgba(47,107,255,.10),transparent 70%),var(--surface)}
+.ph.wide{aspect-ratio:16/9;max-height:none}
+.ph code{font-size:11.5px;color:var(--ink-faint);word-break:break-all}
+.badge{display:inline-flex;align-items:center;gap:7px;font-size:12px;font-weight:600;
+  color:var(--ink-dim);background:var(--surface-2);border:1px solid var(--line);
+  padding:6px 11px;border-radius:999px;margin-bottom:14px}
+.dot{width:7px;height:7px;border-radius:50%;background:var(--grad);flex:none}
+
+/* steps */
+.steps{list-style:none;margin:0;padding:0;counter-reset:s}
+.steps li{counter-increment:s;position:relative;padding:0 0 22px 46px}
+.steps li:before{content:counter(s);position:absolute;left:0;top:-2px;width:30px;height:30px;
+  border-radius:9px;background:var(--surface-2);border:1px solid var(--line);
+  display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:700;color:var(--ink)}
+.steps p{margin:0;font-size:15.5px}
+
+/* price */
+.price{border:1px solid var(--line);border-radius:var(--r);background:var(--surface);overflow:hidden}
+.price-top{padding:24px 22px;background:
+  linear-gradient(180deg,rgba(139,60,246,.12),transparent)}
+.figs{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:4px}
+.fig{font-size:34px;font-weight:700;letter-spacing:-.03em}
+.fig small{font-size:14px;font-weight:600;color:var(--ink-dim);letter-spacing:0}
+.plus{color:var(--ink-faint);font-size:20px;font-weight:600}
+.incl{list-style:none;margin:0;padding:18px 22px 22px}
+.incl li{display:flex;gap:11px;padding:7px 0;font-size:15.5px;color:var(--ink-dim)}
+.incl svg{flex:none;margin-top:3px}
+.terms{padding:0 22px 22px;font-size:13.5px;color:var(--ink-faint);margin:0}
+
+/* form */
+form{display:grid;gap:13px}
+label{display:block;font-size:13.5px;font-weight:600;margin-bottom:6px}
+input,select{width:100%;min-height:52px;padding:0 15px;font-size:16px;color:var(--ink);
+  background:var(--surface);border:1px solid var(--line);border-radius:12px;font-family:inherit}
+select{appearance:none;background-image:
+  url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='8'><path d='M1 1l5 5 5-5' stroke='%236f7486' stroke-width='2' fill='none' stroke-linecap='round'/></svg>");
+  background-repeat:no-repeat;background-position:right 16px center}
+input:focus,select:focus{outline:none;border-color:var(--violet);box-shadow:0 0 0 3px rgba(139,60,246,.2)}
+button{width:100%;min-height:58px;border:0;border-radius:14px;background:var(--grad);
+  color:#fff;font-size:17px;font-weight:700;font-family:inherit;cursor:pointer;
+  box-shadow:0 10px 30px -12px rgba(139,60,246,.6)}
+button:active{transform:translateY(1px)}
+.fineprint{font-size:13px;color:var(--ink-faint);margin:2px 0 0}
+
+/* honest */
+.honest{border:1px solid var(--line);border-radius:var(--r);background:var(--surface-2);padding:20px 22px}
+.honest ul{margin:0;padding-left:18px}
+.honest li{color:var(--ink-dim);font-size:15px;padding:4px 0}
+
+footer{padding:34px 0 46px;border-top:1px solid var(--line);color:var(--ink-faint);font-size:13.5px}
+footer a{color:var(--ink-dim)}
+@media(min-width:620px){section{padding:60px 0}}
+</style>
+</head>
+<body>
+
+<div class="wrap">
+
+<header>
+  <div class="logo"><span class="mark"></span> NONSTOP AI</div>
+</header>
+
+<!-- 1. HERO -->
+<section class="hero" style="position:relative;border-top:0">
+  <div class="glow"></div>
+  <div class="hero-inner">
+    <div class="badge"><span class="dot"></span> For UK roofers &amp; trades</div>
+    <h1>Your phone gets answered.<br><span class="grad">Even from a roof.</span></h1>
+    <p class="lead">A 24/7 AI receptionist that answers in your business name, takes the job details, and texts them straight to you.</p>
+
+    <a class="call" href="tel:+447360266496">
+      <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M22 16.9v3a2 2 0 01-2.2 2 19.8 19.8 0 01-8.6-3.1 19.5 19.5 0 01-6-6A19.8 19.8 0 012.1 4.2 2 2 0 014.1 2h3a2 2 0 012 1.7c.1 1 .4 1.9.7 2.8a2 2 0 01-.5 2.1L8.1 9.9a16 16 0 006 6l1.3-1.2a2 2 0 012.1-.5c.9.3 1.8.6 2.8.7a2 2 0 011.7 2z"/></svg>
+      <span class="num">07360 266496</span>
+    </a>
+    <p class="call-sub">Ring it now — it answers in seconds. No form, no signup.</p>
+
+    <div class="media" style="margin-top:22px">
+      <!-- 25s commercial from the video production agent -->
+      <div class="ph">
+        <strong style="color:var(--ink-dim);font-size:14px">25-second commercial</strong>
+        <code>assets/nonstop-receptionist-25s.mp4</code>
+        <span style="font-size:12px">9:16 · muted autoplay · captions baked in</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 2. REAL CALL -->
+<section>
+  <div class="eyebrow">Hear it for yourself</div>
+  <h2>A real call to this number</h2>
+  <p>Not an actor and not a script. This is a genuine recording of our own receptionist taking an enquiry.</p>
+
+  <div class="media">
+    <div class="ph wide">
+      <strong style="color:var(--ink-dim);font-size:14px">Recorded call</strong>
+      <code>assets/real-call-recording.mp4</code>
+      <span style="font-size:12px">Captioned — most people watch with the sound off</span>
+    </div>
+  </div>
+  <p class="fineprint">Recorded on our own line with consent. No customer audio is used.</p>
+</section>
+
+<!-- 3. TRY IT -->
+<section>
+  <div class="eyebrow">Better than any demo video</div>
+  <h2>Throw a real enquiry at it</h2>
+  <p>Ring up and behave like an awkward customer. Interrupt it. Ask it something odd. That is the fairest test there is — and it is how you will find out whether you would trust it with your own callers.</p>
+  <a class="call" href="tel:+447360266496">
+    <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M22 16.9v3a2 2 0 01-2.2 2 19.8 19.8 0 01-8.6-3.1 19.5 19.5 0 01-6-6A19.8 19.8 0 012.1 4.2 2 2 0 014.1 2h3a2 2 0 012 1.7c.1 1 .4 1.9.7 2.8a2 2 0 01-.5 2.1L8.1 9.9a16 16 0 006 6l1.3-1.2a2 2 0 012.1-.5c.9.3 1.8.6 2.8.7a2 2 0 011.7 2z"/></svg>
+    <span class="num">07360 266496</span>
+  </a>
+  <p class="call-sub">It will tell you it is an AI if you ask. It always does.</p>
+</section>
+
+<!-- 4. HOW IT WORKS -->
+<section>
+  <div class="eyebrow">How it works</div>
+  <h2>Three steps, then it runs itself</h2>
+  <ol class="steps">
+    <li><h3>We set it up with your details</h3><p>Your services, your areas, your hours, how you want jobs handled. You tell us once.</p></li>
+    <li><h3>You get a business number</h3><p>Use it as your main line, or point your existing number at it when you cannot answer.</p></li>
+    <li><h3>Jobs come to you as messages</h3><p>It answers in your business name, takes the details and sends them over. You ring back when you are off the roof.</p></li>
+  </ol>
+</section>
+
+<!-- 5. PRICE -->
+<section>
+  <div class="eyebrow">Price</div>
+  <h2>One package. No tiers to work out.</h2>
+  <div class="price">
+    <div class="price-top">
+      <div class="figs">
+        <span class="fig">£299 <small>setup</small></span>
+        <span class="plus">+</span>
+        <span class="fig">£99 <small>per month</small></span>
+      </div>
+      <p style="margin:0;font-size:14.5px">Both figures apply. The £299 is a one-off at the start.</p>
+    </div>
+    <ul class="incl">
+      <li><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#8b3cf6" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg><span>A professional business website</span></li>
+      <li><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#8b3cf6" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg><span>A business phone number</span></li>
+      <li><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#8b3cf6" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg><span>A 24/7 AI receptionist on that number, set up with your business information</span></li>
+      <li><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#8b3cf6" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg><span>Customer enquiry and lead capture</span></li>
+      <li><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#8b3cf6" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg><span>Setup, testing and launch done by us</span></li>
+    </ul>
+    <p class="terms">Cancel any time — cancelling stops future billing at the end of the current period. Setup is due before work begins; the monthly fee is billed in advance. Payments handled by Stripe.<br><br>If a simpler website without the receptionist is a better fit, say so on the call — we do those too, and we would rather sell you the right thing.</p>
+  </div>
+</section>
+
+<!-- 6. FORM -->
+<section id="demo">
+  <div class="eyebrow">Or let us call you</div>
+  <h2>Request a free demo</h2>
+  <p>Four details, nothing else. We will ring you and walk you through it on your own business.</p>
+
+  <form id="demoForm" name="receptionist-demo" method="POST"
+        data-netlify="true" netlify-honeypot="company-website"
+        action="/ai-receptionist/?sent=1">
+    <input type="hidden" name="form-name" value="receptionist-demo">
+    <input type="hidden" name="tier" value="receptionist">
+    <input type="hidden" name="brand" value="nonstopai">
+    <input type="hidden" name="source_page" value="/ai-receptionist/">
+    <p style="display:none"><label>Leave this empty: <input name="company-website"></label></p>
+    <div>
+      <label for="name">Your name</label>
+      <input id="name" name="name" type="text" autocomplete="name" required>
+    </div>
+    <div>
+      <label for="mobile">Mobile</label>
+      <input id="mobile" name="mobile" type="tel" inputmode="tel" autocomplete="tel" required>
+    </div>
+    <div>
+      <label for="business">Business name</label>
+      <input id="business" name="business_name" type="text" autocomplete="organization" required>
+    </div>
+    <div>
+      <label for="trade">Trade</label>
+      <select id="trade" name="trade" required>
+        <option value="">Choose…</option>
+        <option>Roofing</option><option>Plumbing &amp; heating</option>
+        <option>Electrical</option><option>Building</option>
+        <option>Landscaping</option><option>Other trade</option>
+        <option>Something else</option>
+      </select>
+    </div>
+    <button type="submit">Request my demo</button>
+    <p class="fineprint">We will only use these details to contact you about this enquiry.</p>
+  </form>
+  <p id="formMsg" style="display:none;margin-top:14px;font-weight:600"></p>
+</section>
+
+<!-- 7. HONEST LIMITS -->
+<section>
+  <div class="eyebrow">Straight answers</div>
+  <h2>What it does not do</h2>
+  <div class="honest">
+    <ul>
+      <li>It will not win you work on its own. It answers calls you would otherwise miss — that is the whole claim.</li>
+      <li>It does not handle every call perfectly. No system does, and we will not pretend otherwise.</li>
+      <li>It does not bring you customers or get you found online. We do not sell marketing or SEO.</li>
+      <li>It will not pretend to be human. Ask it, and it tells you it is the AI receptionist.</li>
+      <li>It does not take card payments on the phone.</li>
+    </ul>
+  </div>
+</section>
+
+<footer>
+  <p style="margin:0 0 6px"><strong style="color:var(--ink)">NONSTOP AI</strong> — AI receptionists and business websites for UK businesses.</p>
+  <p style="margin:0">Questions? Ring <a href="tel:+447360266496">07360 266496</a>.</p>
+</footer>
+
+</div>
+
+<script>
+(function(){
+  var f=document.getElementById('demoForm'), m=document.getElementById('formMsg');
+  if(!f||!m) return;
+
+  if(location.search.indexOf('sent=1')>-1){
+    f.style.display='none';
+    m.style.display='block'; m.style.color='#fff';
+    m.textContent='Got it \u2014 we will be in touch. If you would rather not wait, ring 07360 266496.';
+    return;
+  }
+
+  f.addEventListener('submit',function(e){
+    e.preventDefault();
+    var btn=f.querySelector('button');
+    btn.disabled=true; btn.textContent='Sending\u2026';
+    fetch('/',{method:'POST',
+      headers:{'Content-Type':'application/x-www-form-urlencoded'},
+      body:new URLSearchParams(new FormData(f)).toString()})
+      .then(function(r){ if(!r.ok) throw new Error('bad status');
+        f.style.display='none';
+        m.style.display='block'; m.style.color='#fff';
+        m.textContent='Got it \u2014 we will be in touch. If you would rather not wait, ring 07360 266496.';
+      })
+      .catch(function(){
+        btn.disabled=false; btn.textContent='Request my demo';
+        m.style.display='block'; m.style.color='#f0379a';
+        m.innerHTML='That did not send. Please ring <a href="tel:+447360266496" style="color:#f0379a">07360 266496</a> instead.';
+      });
+  });
+})();
+</script>
+</body>
+</html>
