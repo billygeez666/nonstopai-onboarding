@@ -74,6 +74,16 @@ header{padding:20px 0 8px}
   padding:6px 11px;border-radius:999px;margin-bottom:14px}
 .dot{width:7px;height:7px;border-radius:50%;background:var(--grad);flex:none}
 
+/* demo card */
+.demo{border:1px solid var(--line);border-radius:var(--r);background:var(--surface);
+  padding:18px 18px 20px;background-image:radial-gradient(70% 60% at 50% 0%,rgba(139,60,246,.14),transparent 70%)}
+.demo-head{display:flex;align-items:center;gap:8px;font-size:12px;font-weight:600;
+  letter-spacing:.1em;text-transform:uppercase;color:var(--ink-faint);margin-bottom:14px}
+.asks{list-style:none;margin:16px 0 0;padding:0}
+.asks li{font-size:15px;color:var(--ink-dim);padding:7px 0 7px 26px;position:relative}
+.asks li:before{content:"";position:absolute;left:4px;top:15px;width:9px;height:9px;
+  border-radius:50%;background:var(--grad)}
+
 /* benefits */
 .bens{list-style:none;margin:0;padding:0}
 .bens li{display:flex;gap:14px;padding:0 0 20px}
@@ -143,45 +153,36 @@ footer a{color:var(--ink-dim)}
     <h1>Your phone gets answered.<br><span class="grad">Even from a roof.</span></h1>
     <p class="lead">A 24/7 AI receptionist that answers in your business name, takes the job details, and texts them straight to you.</p>
 
-    <a class="call" href="tel:+447360266496">
+    <a class="call" href="tel:+447460080973">
       <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M22 16.9v3a2 2 0 01-2.2 2 19.8 19.8 0 01-8.6-3.1 19.5 19.5 0 01-6-6A19.8 19.8 0 012.1 4.2 2 2 0 014.1 2h3a2 2 0 012 1.7c.1 1 .4 1.9.7 2.8a2 2 0 01-.5 2.1L8.1 9.9a16 16 0 006 6l1.3-1.2a2 2 0 012.1-.5c.9.3 1.8.6 2.8.7a2 2 0 011.7 2z"/></svg>
-      <span class="num">07360 266496</span>
+      <span class="num">07460 080973</span>
     </a>
     <p class="call-sub">Ring it now — it answers in seconds. No form, no signup.</p>
 
-    <div class="media" style="margin-top:22px">
-      <!-- 25s commercial from the video production agent -->
-      <img src="/ai-receptionist/assets/video-placeholder.png" alt="Commercial video coming soon"
-           style="display:block;width:100%;height:auto">
-      <p class="slot">Slot: 25-second commercial &middot; <code>assets/nonstop-receptionist-25s.mp4</code></p>
-    </div>
   </div>
 </section>
 
-<!-- 2. REAL CALL -->
+<!-- 2. CALL THE DEMO -->
 <section>
   <div class="eyebrow">Hear it for yourself</div>
-  <h2>A real call to this number</h2>
-  <p>Not an actor and not a script. This is a genuine recording of our own receptionist taking an enquiry.</p>
+  <h2>Ring the AI and ask it anything</h2>
+  <p>This is the fastest way to judge it. The number below is answered by the same AI receptionist we would set up for your business. Ask it about a job, interrupt it, ask whether it is a real person &mdash; it will tell you.</p>
 
-  <div class="media">
-    <img src="/ai-receptionist/assets/video-placeholder.png" alt="Real call recording coming soon"
-         style="display:block;width:100%;height:auto">
-    <p class="slot">Slot: genuine call recording &middot; <code>assets/real-call-recording.mp4</code></p>
+  <div class="demo">
+    <div class="demo-head">
+      <span class="dot"></span> Live demo line &middot; answers 24/7
+    </div>
+    <a class="call" href="tel:+447460080973">
+      <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M22 16.9v3a2 2 0 01-2.2 2 19.8 19.8 0 01-8.6-3.1 19.5 19.5 0 01-6-6A19.8 19.8 0 012.1 4.2 2 2 0 014.1 2h3a2 2 0 012 1.7c.1 1 .4 1.9.7 2.8a2 2 0 01-.5 2.1L8.1 9.9a16 16 0 006 6l1.3-1.2a2 2 0 012.1-.5c.9.3 1.8.6 2.8.7a2 2 0 011.7 2z"/></svg>
+      <span class="num">07460 080973</span>
+    </a>
+    <ul class="asks">
+      <li>&ldquo;How much is the AI receptionist?&rdquo;</li>
+      <li>&ldquo;I need a roof repair quoting &mdash; can you take my details?&rdquo;</li>
+      <li>&ldquo;Am I talking to a person or a computer?&rdquo;</li>
+    </ul>
   </div>
-  <p class="fineprint">Recorded on our own line with consent. No customer audio is used.</p>
-</section>
-
-<!-- 3. TRY IT -->
-<section>
-  <div class="eyebrow">Better than any demo video</div>
-  <h2>Throw a real enquiry at it</h2>
-  <p>Ring up and behave like an awkward customer. Interrupt it. Ask it something odd. That is the fairest test there is — and it is how you will find out whether you would trust it with your own callers.</p>
-  <a class="call" href="tel:+447360266496">
-    <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M22 16.9v3a2 2 0 01-2.2 2 19.8 19.8 0 01-8.6-3.1 19.5 19.5 0 01-6-6A19.8 19.8 0 012.1 4.2 2 2 0 014.1 2h3a2 2 0 012 1.7c.1 1 .4 1.9.7 2.8a2 2 0 01-.5 2.1L8.1 9.9a16 16 0 006 6l1.3-1.2a2 2 0 012.1-.5c.9.3 1.8.6 2.8.7a2 2 0 011.7 2z"/></svg>
-    <span class="num">07360 266496</span>
-  </a>
-  <p class="call-sub">It will tell you it is an AI if you ask. It always does.</p>
+  <p class="fineprint">Calls to the demo line are recorded so we can keep improving it.</p>
 </section>
 
 <!-- 3b. BENEFITS -->
@@ -293,7 +294,7 @@ footer a{color:var(--ink-dim)}
 
 <footer>
   <p style="margin:0 0 10px"><img src="/nonstop-mark.png" alt="" width="26" height="21" style="vertical-align:middle;margin-right:8px"><strong style="color:var(--ink)">NONSTOP AI</strong> — AI receptionists and business websites for UK businesses.</p>
-  <p style="margin:0">Questions? Ring <a href="tel:+447360266496">07360 266496</a>.</p>
+  <p style="margin:0">Questions? Ring <a href="tel:+447460080973">07460 080973</a>.</p>
 </footer>
 
 </div>
@@ -306,13 +307,13 @@ footer a{color:var(--ink-dim)}
   function done(){
     f.style.display='none';
     m.style.display='block'; m.style.color='#fff';
-    m.textContent='Got it \u2014 we will be in touch. If you would rather not wait, ring 07360 266496.';
+    m.textContent='Got it \u2014 we will be in touch. If you would rather not wait, ring 07460 080973.';
   }
   function fail(msg){
     var btn=f.querySelector('button');
     btn.disabled=false; btn.textContent='Request my demo';
     m.style.display='block'; m.style.color='#f0379a';
-    m.innerHTML=(msg||'That did not send.')+' Please ring <a href="tel:+447360266496" style="color:#f0379a">07360 266496</a>.';
+    m.innerHTML=(msg||'That did not send.')+' Please ring <a href="tel:+447460080973" style="color:#f0379a">07460 080973</a>.';
   }
 
   if(location.search.indexOf('sent=1')>-1){ done(); return; }
