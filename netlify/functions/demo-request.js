@@ -75,12 +75,12 @@ export default async (req) => {
     out = await res.json()
   } catch (err) {
     console.error('demo-request: Supabase unreachable', err)
-    return json(502, { ok: false, message: 'Could not save that. Please ring 07360 266496.' })
+    return json(502, { ok: false, message: 'Could not save that. Please ring 07460 080973.' })
   }
 
   if (!res.ok) {
     console.error('demo-request: RPC error', res.status, out)
-    return json(502, { ok: false, message: 'Could not save that. Please ring 07360 266496.' })
+    return json(502, { ok: false, message: 'Could not save that. Please ring 07460 080973.' })
   }
 
   // The RPC reports why it declined; surface only what is useful to the visitor.
