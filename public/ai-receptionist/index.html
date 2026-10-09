@@ -34,8 +34,8 @@ p.lead{color:var(--ink);font-size:18px}
 
 /* header */
 header{padding:20px 0 8px}
-.logo{display:flex;align-items:center;gap:10px;font-weight:700;letter-spacing:-.01em;font-size:16px}
-.logo .mark{width:26px;height:26px;border-radius:7px;background:var(--grad);flex:none}
+.logo{display:inline-block;line-height:0}
+.logo img{width:168px;height:auto;display:block}
 
 /* hero */
 .hero{padding-top:28px}
@@ -66,10 +66,20 @@ header{padding:20px 0 8px}
   background:radial-gradient(60% 50% at 50% 40%,rgba(47,107,255,.10),transparent 70%),var(--surface)}
 .ph.wide{aspect-ratio:16/9;max-height:none}
 .ph code{font-size:11.5px;color:var(--ink-faint);word-break:break-all}
+.slot{margin:0;padding:9px 12px;border-top:1px solid var(--line);background:var(--surface-2);
+  font-size:11.5px;color:var(--ink-faint);text-align:center}
+.slot code{font-size:11px}
 .badge{display:inline-flex;align-items:center;gap:7px;font-size:12px;font-weight:600;
   color:var(--ink-dim);background:var(--surface-2);border:1px solid var(--line);
   padding:6px 11px;border-radius:999px;margin-bottom:14px}
 .dot{width:7px;height:7px;border-radius:50%;background:var(--grad);flex:none}
+
+/* benefits */
+.bens{list-style:none;margin:0;padding:0}
+.bens li{display:flex;gap:14px;padding:0 0 20px}
+.bi{flex:none;width:30px;height:30px;border-radius:9px;background:var(--grad);
+  display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:700;color:#fff}
+.bens p{margin:0;font-size:15.5px}
 
 /* steps */
 .steps{list-style:none;margin:0;padding:0;counter-reset:s}
@@ -122,7 +132,7 @@ footer a{color:var(--ink-dim)}
 <div class="wrap">
 
 <header>
-  <div class="logo"><span class="mark"></span> NONSTOP AI</div>
+  <a href="/" class="logo" aria-label="NONSTOP AI"><img src="/nonstop-wordmark.png" alt="NONSTOP AI" width="168" height="24"></a>
 </header>
 
 <!-- 1. HERO -->
@@ -141,11 +151,9 @@ footer a{color:var(--ink-dim)}
 
     <div class="media" style="margin-top:22px">
       <!-- 25s commercial from the video production agent -->
-      <div class="ph">
-        <strong style="color:var(--ink-dim);font-size:14px">25-second commercial</strong>
-        <code>assets/nonstop-receptionist-25s.mp4</code>
-        <span style="font-size:12px">9:16 · muted autoplay · captions baked in</span>
-      </div>
+      <img src="/ai-receptionist/assets/video-placeholder.png" alt="Commercial video coming soon"
+           style="display:block;width:100%;height:auto">
+      <p class="slot">Slot: 25-second commercial &middot; <code>assets/nonstop-receptionist-25s.mp4</code></p>
     </div>
   </div>
 </section>
@@ -157,11 +165,9 @@ footer a{color:var(--ink-dim)}
   <p>Not an actor and not a script. This is a genuine recording of our own receptionist taking an enquiry.</p>
 
   <div class="media">
-    <div class="ph wide">
-      <strong style="color:var(--ink-dim);font-size:14px">Recorded call</strong>
-      <code>assets/real-call-recording.mp4</code>
-      <span style="font-size:12px">Captioned — most people watch with the sound off</span>
-    </div>
+    <img src="/ai-receptionist/assets/video-placeholder.png" alt="Real call recording coming soon"
+         style="display:block;width:100%;height:auto">
+    <p class="slot">Slot: genuine call recording &middot; <code>assets/real-call-recording.mp4</code></p>
   </div>
   <p class="fineprint">Recorded on our own line with consent. No customer audio is used.</p>
 </section>
@@ -176,6 +182,17 @@ footer a{color:var(--ink-dim)}
     <span class="num">07360 266496</span>
   </a>
   <p class="call-sub">It will tell you it is an AI if you ask. It always does.</p>
+</section>
+
+<!-- 3b. BENEFITS -->
+<section>
+  <div class="eyebrow">Why trades use it</div>
+  <h2>Three things it changes</h2>
+  <ul class="bens">
+    <li><span class="bi">1</span><div><h3>Calls get answered while you work</h3><p>It picks up in your business name on the first ring, day or night.</p></div></li>
+    <li><span class="bi">2</span><div><h3>Job details arrive as a message</h3><p>Name, number, what they want. You ring back when you are down the ladder.</p></div></li>
+    <li><span class="bi">3</span><div><h3>Nothing to learn or run</h3><p>We set it up with your services and areas, test it, and launch it for you.</p></div></li>
+  </ul>
 </section>
 
 <!-- 4. HOW IT WORKS -->
@@ -232,7 +249,11 @@ footer a{color:var(--ink-dim)}
       <input id="name" name="name" type="text" autocomplete="name" required>
     </div>
     <div>
-      <label for="mobile">Mobile</label>
+      <label for="email">Email</label>
+      <input id="email" name="email" type="email" inputmode="email" autocomplete="email" required>
+    </div>
+    <div>
+      <label for="mobile">Mobile or landline</label>
       <input id="mobile" name="mobile" type="tel" inputmode="tel" autocomplete="tel" required>
     </div>
     <div>
@@ -271,7 +292,7 @@ footer a{color:var(--ink-dim)}
 </section>
 
 <footer>
-  <p style="margin:0 0 6px"><strong style="color:var(--ink)">NONSTOP AI</strong> — AI receptionists and business websites for UK businesses.</p>
+  <p style="margin:0 0 10px"><img src="/nonstop-mark.png" alt="" width="26" height="21" style="vertical-align:middle;margin-right:8px"><strong style="color:var(--ink)">NONSTOP AI</strong> — AI receptionists and business websites for UK businesses.</p>
   <p style="margin:0">Questions? Ring <a href="tel:+447360266496">07360 266496</a>.</p>
 </footer>
 
@@ -282,30 +303,36 @@ footer a{color:var(--ink-dim)}
   var f=document.getElementById('demoForm'), m=document.getElementById('formMsg');
   if(!f||!m) return;
 
-  if(location.search.indexOf('sent=1')>-1){
+  function done(){
     f.style.display='none';
     m.style.display='block'; m.style.color='#fff';
     m.textContent='Got it \u2014 we will be in touch. If you would rather not wait, ring 07360 266496.';
-    return;
   }
+  function fail(msg){
+    var btn=f.querySelector('button');
+    btn.disabled=false; btn.textContent='Request my demo';
+    m.style.display='block'; m.style.color='#f0379a';
+    m.innerHTML=(msg||'That did not send.')+' Please ring <a href="tel:+447360266496" style="color:#f0379a">07360 266496</a>.';
+  }
+
+  if(location.search.indexOf('sent=1')>-1){ done(); return; }
 
   f.addEventListener('submit',function(e){
     e.preventDefault();
     var btn=f.querySelector('button');
     btn.disabled=true; btn.textContent='Sending\u2026';
-    fetch('/',{method:'POST',
-      headers:{'Content-Type':'application/x-www-form-urlencoded'},
-      body:new URLSearchParams(new FormData(f)).toString()})
-      .then(function(r){ if(!r.ok) throw new Error('bad status');
-        f.style.display='none';
-        m.style.display='block'; m.style.color='#fff';
-        m.textContent='Got it \u2014 we will be in touch. If you would rather not wait, ring 07360 266496.';
-      })
-      .catch(function(){
-        btn.disabled=false; btn.textContent='Request my demo';
-        m.style.display='block'; m.style.color='#f0379a';
-        m.innerHTML='That did not send. Please ring <a href="tel:+447360266496" style="color:#f0379a">07360 266496</a> instead.';
-      });
+    var body=new URLSearchParams(new FormData(f)).toString();
+
+    // Netlify Forms keeps an independent copy as a safety net. Fire and forget.
+    fetch('/',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:body})
+      .catch(function(){});
+
+    // Supabase is the path that creates the CRM record and the follow-up task.
+    fetch('/api/demo-request',{method:'POST',
+      headers:{'Content-Type':'application/x-www-form-urlencoded'},body:body})
+      .then(function(r){ return r.json().then(function(j){ return {ok:r.ok,j:j}; }); })
+      .then(function(res){ if(res.ok && res.j && res.j.ok){ done(); } else { fail(res.j && res.j.message); } })
+      .catch(function(){ fail(); });
   });
 })();
 </script>
