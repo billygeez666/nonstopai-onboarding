@@ -54,3 +54,6 @@ Fail-closed gates in `v_re_email_candidates`:
 
 This email uses the Supabase `re-unsubscribe` endpoint, not the separate
 `/api/unsubscribe` Netlify function.
+
+## Colour / dark-mode notes (2026-10-11)
+Palette is the landing-page tokens. `color-scheme: light only` asks Gmail not to force-invert. Logo is `nonstop-wordmark-email.png` (flattened on #0e0f16) so it stays visible if a client inverts. Repo template and Supabase `air_ft_v1` body_html must stay md5-identical (29c2598a265000908e8da26d5d054920 after this change). Logo must be deployed (merged to main) before any test send. Gmail iOS behaviour is unverified until a test send.
