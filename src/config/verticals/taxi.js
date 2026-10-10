@@ -47,7 +47,7 @@ export default {
 
   includedHeading: 'Not just an AI receptionist. A full taxi business system.',
   includedSub:
-    'Everything needed to help your taxi firm look professional, answer customers, capture bookings and stop enquiries slipping away.',
+    'Everything needed to help your taxi firm look professional, answer customers, capture booking enquiries and stop enquiries slipping away.',
   included: [
     {
       title: 'Complete taxi operating system',
