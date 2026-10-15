@@ -142,6 +142,22 @@ button:active{transform:translateY(1px)}
 
 footer{padding:34px 0 46px;border-top:1px solid var(--line);color:var(--ink-faint);font-size:13.5px}
 footer a{color:var(--ink-dim)}
+
+/* social links (Instagram, TikTok): header on desktop (>=900px), footer on mobile */
+.social{display:flex;align-items:center;gap:8px}
+.soc{display:inline-flex;align-items:center;gap:7px;height:30px;padding:0 13px 0 11px;border:1px solid var(--line);border-radius:999px;
+  background:var(--surface);color:var(--ink-dim);font-size:13.5px;line-height:1;text-decoration:none;transition:color .15s,border-color .15s}
+.soc:hover{color:var(--ink);border-color:#3a3d52}
+.soc:focus-visible{outline:2px solid var(--violet);outline-offset:2px}
+.soc svg{display:block;flex:none}
+.social-head{display:none}
+.social-foot{margin-top:16px}
+@media(min-width:900px){
+  /* pinned beside the logo so the header keeps its exact height and the logo does not move */
+  header{position:relative}
+  .social-head{display:flex;position:absolute;right:0;top:20px;height:24px}
+  .social-foot{display:none}
+}
 @media(min-width:620px){section{padding:60px 0}}
 </style>
 </head>
@@ -151,6 +167,10 @@ footer a{color:var(--ink-dim)}
 
 <header>
   <a href="/" class="logo" aria-label="NONSTOP AI"><img src="/nonstop-wordmark.png" alt="NONSTOP AI" width="168" height="24"></a>
+  <div class="social social-head">
+    <a class="soc" href="https://www.instagram.com/nonstopai_uk/" target="_blank" rel="noopener" aria-label="Instagram (opens in a new tab)"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3z"/><circle cx="12" cy="13" r="3.5"/></svg><span>Instagram</span></a>
+    <a class="soc" href="https://www.tiktok.com/@sando.aleksanders" target="_blank" rel="noopener" aria-label="TikTok (opens in a new tab)"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M9 18V6l11-2v12"/><circle cx="6.5" cy="18" r="2.5"/><circle cx="17.5" cy="16" r="2.5"/></svg><span>TikTok</span></a>
+  </div>
 </header>
 
 <!-- 1. HERO -->
@@ -322,6 +342,10 @@ footer a{color:var(--ink-dim)}
 <footer>
   <p style="margin:0 0 10px"><img src="/nonstop-mark.png" alt="" width="26" height="21" style="vertical-align:middle;margin-right:8px"><strong style="color:var(--ink)">NONSTOP AI</strong> — AI receptionists and business websites for UK businesses.</p>
   <p style="margin:0">Questions? Ring <a href="tel:+447460080973">07460 080973</a>.</p>
+  <div class="social social-foot">
+    <a class="soc" href="https://www.instagram.com/nonstopai_uk/" target="_blank" rel="noopener" aria-label="Instagram (opens in a new tab)"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3z"/><circle cx="12" cy="13" r="3.5"/></svg><span>Instagram</span></a>
+    <a class="soc" href="https://www.tiktok.com/@sando.aleksanders" target="_blank" rel="noopener" aria-label="TikTok (opens in a new tab)"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M9 18V6l11-2v12"/><circle cx="6.5" cy="18" r="2.5"/><circle cx="17.5" cy="16" r="2.5"/></svg><span>TikTok</span></a>
+  </div>
 </footer>
 
 </div>

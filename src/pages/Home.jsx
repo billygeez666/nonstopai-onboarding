@@ -2,6 +2,7 @@ import { useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import useMeta from '../hooks/useMeta.js'
 import { CONTACT } from '../config/contact.js'
+import SocialLinks from '../components/SocialLinks.jsx'
 import './Home.css'
 
 const META = {
@@ -44,6 +45,7 @@ export default function Home() {
               <a href="#contact">Contact</a>
             </nav>
             <div className="navcta">
+              <SocialLinks className="social-head" />
               <a className="navtel" href={`tel:${CONTACT.phone}`}>{CONTACT.phoneDisplay}</a>
               <Link className="btn btn-primary" to={SIGNUP}>Get started</Link>
             </div>
@@ -266,6 +268,7 @@ export default function Home() {
                 <img className="w" src="/nonstop-wordmark.png" alt="NONSTOP AI" />
               </a>
               <p>Built for businesses that never want to miss another customer. United Kingdom.</p>
+              <SocialLinks className="social-foot" showLabels />
             </div>
             <div className="fcols">
               <div className="fcol">
