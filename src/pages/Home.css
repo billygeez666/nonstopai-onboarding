@@ -210,3 +210,13 @@
 .nsh .sechead.center{text-align:center;margin-inline:auto;align-items:center}
 .nsh .fbrand .lock img.m{height:26px}
 .nsh .fbrand .lock img.w{height:12px}
+
+/* Social links (Instagram, TikTok): header on desktop (>=900px), footer on mobile */
+.nsh .social{display:flex;align-items:center;gap:8px}
+.nsh .soc{display:inline-flex;align-items:center;justify-content:center;gap:7px;height:34px;min-width:34px;border:1px solid var(--line-2);border-radius:999px;background:rgba(255,255,255,.02);color:var(--dim);transition:color .15s,border-color .15s}
+.nsh .soc:hover{color:var(--paper);border-color:#3A4766}
+.nsh .soc:focus-visible{outline:2px solid var(--cyan);outline-offset:2px}
+.nsh .soc svg{display:block;flex:none}
+.nsh .social-foot .soc{padding:0 14px 0 12px;font-size:.84rem}
+.nsh .social-head{display:none;gap:6px}
+@media (min-width:900px){.nsh .social-head{display:flex}.nsh .social-foot{display:none}}

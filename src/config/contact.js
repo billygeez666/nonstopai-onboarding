@@ -12,4 +12,6 @@ export const CONTACT = {
   phoneDisplay: '07360 266496',
   email:        'aibookingsystems@gmail.com', // ← REPLACE WITH BRANDED ADDRESS
   facebook:     'https://www.facebook.com/share/14jxcjooToL/?mibextid=wwXIfr',
+  instagram:    'https://www.instagram.com/nonstopai_uk/',
+  tiktok:       'https://www.tiktok.com/@sando.aleksanders',
 }
