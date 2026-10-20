@@ -1,7 +1,5 @@
 Hi,
 
-{{INTRO_LINE}}
-
 Many people look a business up on their phone first. If the number or an enquiry button is hard to find, some of them may go elsewhere.
 
 Website Machine is a professional one-page website built for your business: your services, your area, and clear call and enquiry buttons. We build it, you approve it, and we launch it.

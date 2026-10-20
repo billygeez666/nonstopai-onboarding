@@ -1,7 +1,5 @@
 Hi,
 
-{{INTRO_LINE}}
-
 Enquiries arrive by form, call and message, and following each one up by hand is easy to put off. Quotes and leads can go cold while you are busy.
 
 We build simple automations around how your business already works: every enquiry logged and sent to you, prompt replies and reminders, confirmations, and records kept in one place.

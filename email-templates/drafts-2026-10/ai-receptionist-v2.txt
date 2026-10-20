@@ -1,7 +1,5 @@
 Hi,
 
-{{INTRO_LINE}}
-
 When you are on a job or with a customer, the phone still rings. A caller who does not get an answer may try someone else.
 
 Our AI receptionist answers your calls 24/7 in your business name, takes the caller's name, number and what they need, and sends you the details so you can ring back. It tells callers it is an AI.

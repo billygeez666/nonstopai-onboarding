@@ -1,6 +1,6 @@
 # Draft outreach templates, 2026-10 (NOT ACTIVE, NOT LOADED INTO SUPABASE)
 
-Each template = `.html` + `.txt` (same words). Placeholders: `{{BUSINESS_NAME}}`, `{{INTRO_LINE}}` (verified-evidence sentence, see below), `{{OPTOUT_TOKEN}}`.
+Each template = `.html` + `.txt` (same words). Placeholders: `{{BUSINESS_NAME}}`, `{{OPTOUT_TOKEN}}` only (INTRO_LINE removed 20 Oct 2026).
 
 | File | Proposed key | Subject | CTA target |
 |---|---|---|---|
