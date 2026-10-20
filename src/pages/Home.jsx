@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, useCallback } from 'react'
 import { Link } from 'react-router-dom'
 import useMeta from '../hooks/useMeta.js'
 import { CONTACT } from '../config/contact.js'
@@ -29,59 +29,159 @@ function preselect(service) {
   window.dispatchEvent(new CustomEvent(PRESELECT_EVENT, { detail: service }))
 }
 
-// Tap-to-play sample video. Nothing is downloaded until the visitor presses play.
-function VideoCard({ src, audio, poster, label, w, h, tall }) {
+const reduceMotion = () => typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches
+
+// Muted looping hero backdrop. Falls back to the poster if autoplay is blocked or motion is reduced.
+function HeroVideo() {
   const ref = useRef(null)
-  const [on, setOn] = useState(false)
+  useEffect(() => {
+    const v = ref.current
+    if (!v || reduceMotion()) return
+    v.muted = true
+    const p = v.play()
+    if (p && p.catch) p.catch(() => {})
+  }, [])
+  return (
+    <video ref={ref} className="herovid" src="/media/video-ads/sneaker-ad.mp4" poster="/media/video-ads/sneaker-ad-poster.jpg"
+      muted loop playsInline autoPlay={!reduceMotion()} preload="metadata" aria-hidden="true" tabIndex={-1} disablePictureInPicture />
+  )
+}
+
+// Big receptionist film. Nothing downloads until play; plays with sound on tap.
+function FilmPlayer() {
+  const ref = useRef(null)
+  const [state, setState] = useState('idle') // idle | playing | ended
   const play = () => {
     const v = ref.current
     if (!v) return
-    document.querySelectorAll('.nsh video').forEach((o) => { if (o !== v && !o.paused) o.pause() })
-    const url = audio || src
-    if (v.getAttribute('src') !== url) v.src = url
+    if (!v.getAttribute('src')) v.src = '/ai-receptionist/video/nonstop-ai-30s.mp4'
     v.muted = false
-    v.playsInline = true
     v.controls = true
-    setOn(true)
+    setState('playing')
     const p = v.play()
-    if (p && p.catch) {
-      p.catch(() => {
-        v.muted = true
-        const q = v.play()
-        if (q && q.catch) q.catch(() => { setOn(false); v.controls = false })
-      })
-    }
+    if (p && p.catch) p.catch(() => { v.muted = true; v.play().catch(() => setState('idle')) })
   }
   return (
-    <div className={`vid${tall ? ' tall' : ''}${on ? ' playing' : ''}`}>
-      <video ref={ref} poster={poster} playsInline preload="none" width={w} height={h} aria-label={label} onEnded={() => setOn(false)} />
-      {!on && (
-        <button type="button" className="playbig" onClick={play} aria-label={`Play: ${label}`}><span>&#9654;</span></button>
+    <div className={`film ${state}`}>
+      <video ref={ref} poster="/ai-receptionist/video/poster.jpg" playsInline preload="none" width="1280" height="720"
+        aria-label="NONSTOP AI receptionist film" onEnded={() => { setState('ended') }} />
+      {state !== 'playing' && (
+        <button type="button" className="bigplay" onClick={play} aria-label={state === 'ended' ? 'Replay the film' : 'Play the film with sound'}>
+          <span className="pi">{state === 'ended' ? '↻' : '▶'}</span>
+          <span className="pt">{state === 'ended' ? 'Replay' : 'Watch it answer a call'}</span>
+        </button>
       )}
     </div>
   )
 }
 
+// Perfume ad: autoplays muted when visible, plays once, holds the last frame, manual Play/Replay for iOS.
+function OnceVideo() {
+  const ref = useRef(null)
+  const wrap = useRef(null)
+  const done = useRef(false)
+  const [state, setState] = useState('idle') // idle | playing | ended
+  const start = useCallback(() => {
+    const v = ref.current
+    if (!v) return
+    v.muted = true
+    if (done.current) v.currentTime = 0
+    const p = v.play()
+    if (p && p.then) p.then(() => setState('playing')).catch(() => setState('idle'))
+    else setState('playing')
+  }, [])
+  useEffect(() => {
+    const el = wrap.current
+    if (!el || reduceMotion() || !('IntersectionObserver' in window)) return
+    let fired = false
+    const io = new IntersectionObserver((es) => {
+      es.forEach((e) => {
+        if (e.isIntersecting && e.intersectionRatio >= 0.55 && !fired && !done.current) {
+          fired = true
+          start()
+          io.disconnect()
+        }
+      })
+    }, { threshold: [0.55] })
+    io.observe(el)
+    return () => io.disconnect()
+  }, [start])
+  return (
+    <div ref={wrap} className={`once ${state}`}>
+      <video ref={ref} src="/media/video-ads/perfume-ad.mp4" poster="/media/video-ads/perfume-ad-poster.jpg" muted playsInline preload="metadata"
+        width="720" height="1294" aria-label="Sample AI-generated perfume advert"
+        onPlaying={() => setState('playing')} onEnded={() => { done.current = true; setState('ended') }} />
+      {state !== 'playing' && (
+        <button type="button" className="oncebtn" onClick={start} aria-label={state === 'ended' ? 'Replay the perfume advert' : 'Play the perfume advert'}>
+          <span className="pi">{state === 'ended' ? '↻' : '▶'}</span>
+          <span className="pt">{state === 'ended' ? 'Replay' : 'Play'}</span>
+        </button>
+      )}
+    </div>
+  )
+}
+
+const DEMOS = [
+  { img: '/media/website-demos/cardiff-plumbing.jpg', name: 'Cardiff Plumbing', note: 'Click-to-call and quote request', href: 'https://cardiff-plumbing-preview.netlify.app/' },
+  { img: '/media/website-demos/primefinish-decorating.jpg', name: 'PrimeFinish Decorating', note: 'Clear offer, free quotes', href: 'https://primefinish-decorating.netlify.app/' },
+  { img: '/media/website-demos/clearline-exteriors.jpg', name: 'Clearline Exteriors', note: 'Sample build — fictional company', href: 'https://website-machine-sample-clearline.netlify.app/' },
+]
+
+function DemoCarousel() {
+  const ref = useRef(null)
+  const [i, setI] = useState(0)
+  const onScroll = () => {
+    const el = ref.current
+    if (!el) return
+    const card = el.children[0]
+    const step = card ? card.getBoundingClientRect().width + 16 : 1
+    setI(Math.max(0, Math.min(DEMOS.length - 1, Math.round(el.scrollLeft / step))))
+  }
+  const go = (n) => {
+    const el = ref.current
+    if (!el) return
+    const card = el.children[0]
+    const step = card ? card.getBoundingClientRect().width + 16 : 0
+    el.scrollTo({ left: n * step, behavior: reduceMotion() ? 'auto' : 'smooth' })
+  }
+  return (
+    <div className="car">
+      <div className="track" ref={ref} onScroll={onScroll} role="region" aria-label="Website examples, swipe sideways" tabIndex={0}>
+        {DEMOS.map((d) => (
+          <a key={d.name} className="dcard" href={d.href} target="_blank" rel="noopener noreferrer" aria-label={`${d.name} — open live example in a new tab`}>
+            <img src={d.img} alt={`${d.name} website on a phone`} width="390" height="844" loading="lazy" decoding="async" />
+            <span className="dcap"><b>{d.name}</b><small>{d.note}</small><em>View live &#8599;</em></span>
+          </a>
+        ))}
+      </div>
+      <div className="cnav">
+        <button type="button" onClick={() => go(Math.max(0, i - 1))} aria-label="Previous example" disabled={i === 0}>&#8592;</button>
+        <div className="dots">{DEMOS.map((d, n) => <i key={d.name} className={n === i ? 'on' : ''} />)}</div>
+        <button type="button" onClick={() => go(Math.min(DEMOS.length - 1, i + 1))} aria-label="Next example" disabled={i === DEMOS.length - 1}>&#8594;</button>
+      </div>
+    </div>
+  )
+}
+
+function Reveal({ children, className = '' }) {
+  const ref = useRef(null)
+  const [on, setOn] = useState(false)
+  useEffect(() => {
+    const el = ref.current
+    if (!el || reduceMotion() || !('IntersectionObserver' in window)) { setOn(true); return }
+    const io = new IntersectionObserver((es) => { if (es[0].isIntersecting) { setOn(true); io.disconnect() } }, { threshold: 0.15 })
+    io.observe(el)
+    return () => io.disconnect()
+  }, [])
+  return <div ref={ref} className={`rv ${on ? 'in' : ''} ${className}`}>{children}</div>
+}
+
 export default function Home() {
   useMeta(META)
-
-  // Single-open FAQ accordion, scoped to this component.
-  useEffect(() => {
-    const root = document.querySelector('.nsh')
-    if (!root) return
-    const faq = [...root.querySelectorAll('.faq details')]
-    const handlers = faq.map((d) => {
-      const h = () => { if (d.open) faq.forEach((o) => { if (o !== d) o.open = false }) }
-      d.addEventListener('toggle', h)
-      return [d, h]
-    })
-    return () => { handlers.forEach(([d, h]) => d.removeEventListener('toggle', h)) }
-  }, [])
-
   const goEnquiry = (service) => () => preselect(service)
 
   return (
-    <div className="nsh">
+    <div className="nsh nsh2">
       <div className="nav">
         <div className="wrap navin">
           <a className="lock" href="#top" aria-label="NONSTOP AI">
@@ -93,7 +193,6 @@ export default function Home() {
             <a href="#receptionist">AI Receptionist</a>
             <a href="#video-ads">Video Ads</a>
             <a href="#automation">Automation</a>
-            <a href="#faq">FAQ</a>
           </nav>
           <div className="navcta">
             <SocialLinks className="social-head" />
@@ -103,204 +202,131 @@ export default function Home() {
         </div>
       </div>
 
-      {/* ---------------- HERO ---------------- */}
-      <section className="hero" id="top">
-        <div className="wrap herogrid">
-          <div>
-            <span className="eyebrow">AI systems for UK businesses</span>
-            <h1>A business that <span className="gt">never stops.</span></h1>
-            <p className="lede">
-              We set up four AI-powered services for you: a professional website, a 24/7 AI receptionist, product video
-              ads and business automation. You tell us what you need — we build it and put it live.
-            </p>
-            <div className="herobtns">
-              <a className="btn btn-primary" href="#enquiry" onClick={goEnquiry('Not sure')}>Send an enquiry</a>
-              <a className="btn btn-ghost" href="#services">See the four services</a>
-            </div>
-            <ul className="ticks">
-              <li>Enquire first — no payment up front</li>
-              <li>Set up for you</li>
-              <li>Keep your own number</li>
-            </ul>
-          </div>
-
-          <div className="quad" id="services">
-            <a className="qt" href="#website"><span className="qi"><Ic d={ICON.web} c="#5CD9F5" /></span><b>Website Machine</b><span>Professional, mobile-first websites.</span></a>
-            <a className="qt" href="#receptionist"><span className="qi"><Ic d={ICON.phone} c="#6FA0F7" /></span><b>AI Receptionist</b><span>Answers every call, day and night.</span></a>
-            <a className="qt" href="#video-ads"><span className="qi"><Ic d={ICON.video} c="#9B6BF5" /></span><b>Product Video Ads</b><span>AI-made adverts for your product.</span></a>
-            <a className="qt" href="#automation"><span className="qi"><Ic d={ICON.flow} c="#D24BF5" /></span><b>Business Automation</b><span>Less admin, faster follow-up.</span></a>
-          </div>
-        </div>
-      </section>
-
-      {/* ---------------- WEBSITE MACHINE ---------------- */}
-      <section className="sec" id="website">
-        <div className="wrap split">
-          <div>
-            <span className="eyebrow">01 · Website Machine</span>
-            <h2>A professional website, <span className="gt">built for you.</span></h2>
-            <p className="body">
-              A fast, mobile-first website with clear calls to action, click-to-call and an enquiry form, so people who
-              find you know how to get in touch. We write it, build it and put it live — you don&rsquo;t touch a dashboard.
-            </p>
-            <ul className="list">
-              <li>One-page websites from <b>£99</b> (one-off)</li>
-              <li>Booking or enquiry capture available on larger builds</li>
-              <li>Works with the AI receptionist and automation below</li>
-            </ul>
-            <p className="fine">A website does not by itself bring in customers — we don&rsquo;t sell advertising or SEO.</p>
-            <div className="herobtns">
-              <a className="btn btn-primary" href="#enquiry" onClick={goEnquiry('Website Machine')}>Enquire about a website</a>
-            </div>
-          </div>
-          <div className="mock" aria-hidden="true">
-            <div className="mbar"><i /><i /><i /><span>yourbusiness.co.uk</span></div>
-            <div className="mbody">
-              <div className="mh" /><div className="ml w70" /><div className="ml w50" />
-              <div className="mrow"><div className="mb" /><div className="mb g" /></div>
-              <div className="mcards"><div /><div /><div /></div>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* ---------------- AI RECEPTIONIST ---------------- */}
-      <section className="sec sec-tint" id="receptionist">
-        <div className="wrap split rev">
-          <div className="ticket" aria-label="Example of a call being answered">
-            <div className="tbar"><span className="lbl">Your front desk</span><span className="livechip"><span className="dot" /> Live</span></div>
-            <div className="tbody">
-              <div className="callrow">
-                <div className="avatar"><Ic d={ICON.phone} /></div>
-                <div><div className="num">07911 224 488</div><div className="meta">Missed at 11:47pm</div></div>
-                <div className="stat">Answered ✓</div>
-              </div>
-              <div className="tsteps">
-                <div className="line on"><span className="tagx">Ring 1</span><span className="txt">“Good evening, how can I help?”</span></div>
-                <div className="line on"><span className="tagx">Caller</span><span className="txt">“Do you do a website with online booking?”</span></div>
-                <div className="line on"><span className="tagx">Captured</span><span className="txt">Name · business · phone · what they need</span></div>
-                <div className="line on"><span className="tagx">Sent</span><span className="txt">Details in your inbox before they hang up</span></div>
-              </div>
-            </div>
-            <div className="tfoot"><span>Example call</span><span>24/7</span></div>
-          </div>
-          <div>
-            <span className="eyebrow">02 · AI Receptionist</span>
-            <h2>Every call answered, <span className="gt">day or night.</span></h2>
-            <p className="body">
-              An AI receptionist on your business number takes the booking or the enquiry, captures the caller&rsquo;s
-              details and notifies you straight away. Your existing number stays your number.
-            </p>
-            <ul className="list">
-              <li><b>£299</b> setup + <b>£99</b>/month — website, business number and receptionist as one package</li>
-              <li>Rolling monthly subscription, no long-term contract</li>
-              <li>Set up, tested and launched by us</li>
-            </ul>
-            <div className="herobtns">
-              <a className="btn btn-primary" href="/ai-receptionist/">See the AI receptionist</a>
-              <Link className="btn btn-ghost" to={SIGNUP}>Get started</Link>
-            </div>
-            <div className="dem">
-              <span className="eyebrow">Hear it live — real lines, no signup</span>
-              <a className="dial" href="tel:+447449839233"><span>Taxi demo</span><b>07449 839233</b></a>
-              <a className="dial" href="tel:+447460045201"><span>Takeaway demo</span><b>07460 045201</b></a>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* ---------------- PRODUCT VIDEO ADS ---------------- */}
-      <section className="sec" id="video-ads">
-        <div className="wrap">
-          <div className="sechead">
-            <span className="eyebrow">03 · Product Video Ads</span>
-            <h2>AI-made adverts for <span className="gt">the way people scroll.</span></h2>
-            <p>Cinematic short product ads for Instagram, TikTok, Facebook and your website. Tap to play our own sample adverts.</p>
-          </div>
-          <div className="vgrid">
-            <VideoCard tall src="/media/video-ads/perfume-ad.mp4" audio="/media/video-ads/perfume-ad-audio.mp4" poster="/media/video-ads/perfume-ad-poster.jpg" label="Sample AI-generated perfume advert" w={720} h={1294} />
-            <VideoCard src="/media/video-ads/sneaker-ad.mp4" audio="/media/video-ads/sneaker-ad-audio.mp4" poster="/media/video-ads/sneaker-ad-poster.jpg" label="Sample AI-generated sneaker advert" w={1280} h={720} />
-            <VideoCard tall src="/media/video-ads/skincare-ad.mp4" poster="/media/video-ads/skincare-ad-poster.jpg" label="Sample AI-generated skincare advert" w={720} h={1294} />
-          </div>
-          <p className="fine">These are NONSTOP AI&rsquo;s own sample ads, not client work. Priced per project — quote before you pay.</p>
+      {/* 1 ---- HERO ---- */}
+      <section className="cine" id="top">
+        <HeroVideo />
+        <div className="cineshade" />
+        <div className="wrap cinein">
+          <span className="eyebrow">NONSTOP AI &middot; United Kingdom</span>
+          <h1>Your business, <span className="gt">never off.</span></h1>
+          <p className="cl">Websites, an AI receptionist, product video ads and automation &mdash; set up for you.</p>
           <div className="herobtns">
-            <a className="btn btn-primary" href="/product-video-ads/">Explore Product Video Ads</a>
-            <a className="btn btn-ghost" href="#enquiry" onClick={goEnquiry('Product Video Ads')}>Request a quote</a>
+            <a className="btn btn-primary big" href="#enquiry" onClick={goEnquiry('Not sure')}>Start your enquiry</a>
+            <a className="btn btn-ghost big" href="#website">See what we build</a>
+          </div>
+          <div className="svcrail" aria-label="Our four services">
+            <a href="#website"><i /> Website Machine</a>
+            <a href="#receptionist"><i /> AI Receptionist</a>
+            <a href="#video-ads"><i /> Video Ads</a>
+            <a href="#automation"><i /> Automation</a>
           </div>
         </div>
       </section>
 
-      {/* ---------------- BUSINESS AUTOMATION ---------------- */}
-      <section className="sec sec-tint" id="automation">
-        <div className="wrap split">
-          <div>
-            <span className="eyebrow">04 · Business Automation</span>
-            <h2>Less admin. <span className="gt">Faster follow-up.</span></h2>
-            <p className="body">
-              We connect the tools you already use so enquiries, notifications, follow-ups and reports happen
-              automatically — scoped to how your business actually runs, not sold off a shelf.
-            </p>
-            <ul className="list">
-              <li>Instant alerts when a new enquiry arrives</li>
-              <li>Automatic customer follow-up messages</li>
-              <li>Simple reporting on what is coming in</li>
-            </ul>
-            <p className="fine">Quote-only: every business is different, so we scope it with you first.</p>
-            <div className="herobtns">
-              <a className="btn btn-primary" href="/business-automation/">Explore Business Automation</a>
-              <a className="btn btn-ghost" href="#enquiry" onClick={goEnquiry('Business Automation')}>Request a quote</a>
-            </div>
-          </div>
-          <div className="flow" role="img" aria-label="Example workflow: enquiry arrives, alert sent, follow-up queued, recorded">
-            <span className="flowtag">Example workflow</span>
-            <div className="fn"><i>1</i><span><b>Enquiry arrives</b><small>Form, call or message</small></span></div>
-            <div className="fl" />
-            <div className="fn"><i>2</i><span><b>You&rsquo;re alerted</b><small>Email the moment it lands</small></span></div>
-            <div className="fl" />
-            <div className="fn"><i>3</i><span><b>Follow-up queued</b><small>Customer hears back quickly</small></span></div>
-            <div className="fl" />
-            <div className="fn"><i>4</i><span><b>Recorded</b><small>One place, nothing lost</small></span></div>
-          </div>
-        </div>
-      </section>
-
-      {/* ---------------- HOW IT WORKS ---------------- */}
-      <section className="sec" id="how">
+      {/* 2 ---- WEBSITE MACHINE ---- */}
+      <section className="show s-web" id="website">
         <div className="wrap">
-          <div className="sechead">
-            <span className="eyebrow">How it works</span>
-            <h2>Enquire first. <span className="gt">Pay only once we&rsquo;ve agreed.</span></h2>
-          </div>
-          <ol className="steps">
-            <li><b>Tell us what you need</b><span>Send a short enquiry — pick a service or say you&rsquo;re not sure.</span></li>
-            <li><b>We review and reply</b><span>We confirm the scope and send a clear quote or next step by email.</span></li>
-            <li><b>You agree</b><span>Nothing is charged at enquiry stage. Payment comes after you&rsquo;ve agreed the work.</span></li>
-            <li><b>We build and launch</b><span>We set it up, test it and put it live for you.</span></li>
-          </ol>
+          <Reveal>
+            <span className="num">01</span>
+            <span className="eyebrow">Website Machine</span>
+            <h2>Websites that <span className="gt">look the part.</span></h2>
+            <p className="short">Fast, mobile-first, built and launched for you.</p>
+          </Reveal>
         </div>
-      </section>
-
-      {/* ---------------- FAQ ---------------- */}
-      <section className="sec sec-tint" id="faq">
-        <div className="wrap faqwrap">
-          <div className="sechead"><span className="eyebrow">FAQ</span><h2>Good to know.</h2></div>
-          <div className="faq">
-            <details open><summary>Do I pay when I enquire? <span className="chev">+</span></summary><div className="ans">No. The enquiry form is free to send and no payment is taken. You are only asked to pay after you&rsquo;ve agreed the work.</div></details>
-            <details><summary>Can I keep my existing phone number? <span className="chev">+</span></summary><div className="ans">Yes. For the AI receptionist you keep the number your customers already have. We set up the answering behind it.</div></details>
-            <details><summary>Can I try the AI receptionist first? <span className="chev">+</span></summary><div className="ans">Yes — call either live demo line in the AI Receptionist section. No signup, no card.</div></details>
-            <details><summary>How much do the video ads and automation cost? <span className="chev">+</span></summary><div className="ans">Both are priced per project, so we quote after your enquiry. You&rsquo;ll see a price before you pay anything.</div></details>
-            <details><summary>What if I want to cancel the receptionist? <span className="chev">+</span></summary><div className="ans">The £99/month is a rolling monthly subscription. There is no long-term contract to sign.</div></details>
+        <Reveal><DemoCarousel /></Reveal>
+        <div className="wrap">
+          <Reveal className="pricerow">
+            <div className="pc"><b>&pound;99</b><span>One-page website<br />one-off, no monthly fee</span></div>
+            <div className="pc"><b>&pound;299<small> + &pound;99/mo</small></b><span>Website, business number and AI receptionist together</span></div>
+          </Reveal>
+          <p className="fine">A website does not by itself bring in customers &mdash; we don&rsquo;t sell advertising or SEO.</p>
+          <div className="herobtns">
+            <a className="btn btn-primary big" href="#enquiry" onClick={goEnquiry('Website Machine')}>Enquire about a website</a>
           </div>
         </div>
       </section>
 
-      {/* ---------------- ENQUIRY ---------------- */}
+      {/* 3 ---- AI RECEPTIONIST ---- */}
+      <section className="show s-rec" id="receptionist">
+        <div className="wrap">
+          <Reveal>
+            <span className="num">02</span>
+            <span className="eyebrow">AI Receptionist</span>
+            <h2>Every call answered, <span className="gt">day or night.</span></h2>
+          </Reveal>
+          <Reveal><FilmPlayer /></Reveal>
+          <Reveal className="flow3">
+            <div><i>1</i><b>Answers</b><span>Picks up on your business number, 24/7.</span></div>
+            <div><i>2</i><b>Captures</b><span>Name, number and what they need.</span></div>
+            <div><i>3</i><b>Alerts you</b><span>Details sent the moment they hang up.</span></div>
+          </Reveal>
+          <div className="herobtns">
+            <a className="btn btn-primary big" href="/ai-receptionist/">See the AI receptionist</a>
+            <a className="btn btn-ghost big" href="#enquiry" onClick={goEnquiry('AI Receptionist')}>Enquire</a>
+          </div>
+          <div className="dem">
+            <span className="eyebrow">Hear it live</span>
+            <a className="dial" href="tel:+447449839233"><span>Taxi demo</span><b>07449 839233</b></a>
+            <a className="dial" href="tel:+447460045201"><span>Takeaway demo</span><b>07460 045201</b></a>
+          </div>
+        </div>
+      </section>
+
+      {/* 4 ---- PRODUCT VIDEO ADS ---- */}
+      <section className="show s-vid" id="video-ads">
+        <div className="wrap vidgrid">
+          <Reveal className="vtxt">
+            <span className="num">03</span>
+            <span className="eyebrow">Product Video Ads</span>
+            <h2>Adverts made for <span className="gt">the scroll.</span></h2>
+            <p className="short">Cinematic five-second product ads for Instagram, TikTok and your site.</p>
+            <div className="herobtns">
+              <a className="btn btn-primary big" href="/product-video-ads/">Explore AI Video Ads</a>
+            </div>
+            <p className="fine">Our own sample advert &mdash; not client work. Priced per project; quote before you pay.</p>
+          </Reveal>
+          <Reveal className="vmedia"><OnceVideo /></Reveal>
+        </div>
+      </section>
+
+      {/* 5 ---- BUSINESS AUTOMATION ---- */}
+      <section className="show s-aut" id="automation">
+        <div className="wrap">
+          <Reveal>
+            <span className="num">04</span>
+            <span className="eyebrow">Business Automation</span>
+            <h2>Less admin. <span className="gt">Faster follow-up.</span></h2>
+          </Reveal>
+          <Reveal>
+            <div className="wf" role="img" aria-label="Animated example workflow: enquiry arrives, you are alerted, follow-up is sent, everything is recorded">
+              <div className="wfn n1"><i>&#9993;</i><b>Enquiry</b></div>
+              <div className="wfl"><u /></div>
+              <div className="wfn n2"><i>&#128276;</i><b>You&rsquo;re alerted</b></div>
+              <div className="wfl"><u /></div>
+              <div className="wfn n3"><i>&#9889;</i><b>Follow-up sent</b></div>
+              <div className="wfl"><u /></div>
+              <div className="wfn n4"><i>&#10003;</i><b>Recorded</b></div>
+            </div>
+          </Reveal>
+          <ul className="chips">
+            <li>Instant alerts</li>
+            <li>Automatic follow-ups</li>
+            <li>Nothing lost</li>
+          </ul>
+          <div className="herobtns">
+            <a className="btn btn-primary big" href="/business-automation/">Explore Business Automation</a>
+            <a className="btn btn-ghost big" href="#enquiry" onClick={goEnquiry('Business Automation')}>Request a quote</a>
+          </div>
+        </div>
+      </section>
+
+      {/* 6 ---- ENQUIRY ---- */}
       <section className="sec" id="enquiry">
         <div className="wrap enq">
           <div className="sechead center">
             <span className="eyebrow">Get started</span>
             <h2>Tell us what you <span className="gt">need.</span></h2>
-            <p>Takes about a minute. No payment needed. Prefer to talk? Call <a className="tl" href={`tel:${CONTACT.phone}`}>{CONTACT.phoneDisplay}</a>.</p>
+            <p>About a minute. No payment taken. Prefer to talk? Call <a className="tl" href={`tel:${CONTACT.phone}`}>{CONTACT.phoneDisplay}</a>.</p>
           </div>
           <ServiceEnquiryForm />
         </div>
