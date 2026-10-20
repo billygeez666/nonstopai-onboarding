@@ -541,3 +541,6 @@
 .nsh3 .svcta .btn{white-space:nowrap}
 @media(max-width:560px){.nsh3 .svcta .btn{white-space:normal}}
 @media(min-width:900px){.nsh3 .h3txt{max-width:600px}.nsh3 .h3txt h1{font-size:clamp(2.6rem,4.2vw,3.45rem)}.nsh3 .laptop{width:min(46%,500px);right:4%}.nsh3 .aiphone{left:54%}}
+@media(min-width:700px){.nsh3 .prices{grid-template-columns:repeat(2,1fr)}}
+@media(min-width:1100px){.nsh3 .prices{grid-template-columns:repeat(4,1fr);gap:16px}}
+.nsh3 .pcard h3{display:flex;align-items:center;gap:8px}

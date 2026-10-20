@@ -146,7 +146,7 @@ export default {
     },
     {
       q: 'How long until it is live?',
-      a: 'Typically 48 hours from signup. We build it, you check it, then it goes live.',
+      a: 'We build it, you check it, then it goes live. We will confirm the timing with you when you sign up.',
     },
     {
       q: 'Can I hear it before I pay?',

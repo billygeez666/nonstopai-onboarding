@@ -102,7 +102,7 @@ function HeroScene() {
 
 const DEMOS = [
   { id: 'cardiff', name: 'Cardiff Plumbing', note: 'Click-to-call and quote request', d: '/media/website-demos/cardiff-plumbing-desktop.jpg', m: '/media/website-demos/cardiff-plumbing.jpg', href: 'https://cardiff-plumbing-preview.netlify.app/' },
-  { id: 'primefinish', name: 'PrimeFinish Decorating', note: 'Clear offer and free quotes', d: '/media/website-demos/primefinish-decorating-desktop.jpg', m: '/media/website-demos/primefinish-decorating.jpg', href: 'https://primefinish-decorating.netlify.app/' },
+  { id: 'wmplumbers', name: 'Website Machine for plumbers', note: 'Our \u00a399 one-page website offer', d: '/media/website-demos/website-machine-plumbers-desktop.jpg', m: '/media/website-demos/website-machine-plumbers.jpg', href: 'https://website-machine-plumbers.netlify.app/' },
   { id: 'clearline', name: 'Clearline Exteriors', note: 'Sample build — fictional company', d: '/media/website-demos/clearline-exteriors-desktop.jpg', m: '/media/website-demos/clearline-exteriors.jpg', href: 'https://website-machine-sample-clearline.netlify.app/' },
   { id: 'roofers', name: 'Roofersites UK', note: 'Our £99 website offer for roofers', d: '/media/website-demos/roofersites-uk-desktop.jpg', m: '/media/website-demos/roofersites-uk.jpg', href: 'https://roofersites-uk.netlify.app/' },
 ]
@@ -152,7 +152,7 @@ function Showroom() {
 const CALL_STEPS = [
   { ic: I2.mic, t: 'Thanks for calling. How can I help today?' },
   { ic: I2.chat, t: 'Capture enquiry' },
-  { ic: I2.cal, t: 'Book appointment' },
+  { ic: I2.cal, t: 'Book appointment (where set up)' },
   { ic: I2.mail, t: 'Send to your email' },
 ]
 function CallShowcase() {
@@ -226,9 +226,10 @@ function OnceVideo() {
 }
 
 const PRICES = [
-  { key: 'starter', name: 'Starter', price: '£99', per: 'one-off', items: ['1-page website', 'Contact form', 'Mobile friendly'], cta: 'Get started', svc: 'Website Machine' },
-  { key: 'business', name: 'Business', price: '£299', per: 'setup + £99/month', items: ['Professional website', 'Business number', '24/7 AI receptionist', 'Set up, tested and launched by us'], cta: 'Get started', svc: 'AI Receptionist', pop: true },
-  { key: 'custom', name: 'Custom', price: '£599+', per: '', items: ['Larger websites', 'Booking or enquiry systems', 'Quoted before you pay'], cta: 'Discuss your project', svc: 'Website Machine' },
+  { key: 'starter', name: 'Starter', price: '\u00a399', per: 'one-off', items: ['One-page website', 'Contact form', 'Mobile friendly'], cta: 'Get started', svc: 'Website Machine' },
+  { key: 'growth', name: 'Growth', price: '\u00a3199', per: 'setup + \u00a350/month', items: ['Multi-page website', 'Booking or enquiry functionality, set up for your business', 'Hosting and support'], cta: 'Get started', svc: 'Website Machine' },
+  { key: 'business', name: 'Business', price: '\u00a3299', per: 'setup + \u00a399/month', items: ['Website with AI receptionist', 'Business phone number', 'Set up, tested and launched by us'], cta: 'Get started', svc: 'AI Receptionist', pop: true, tag: 'Includes AI receptionist' },
+  { key: 'custom', name: 'Custom', price: '\u00a3599+', per: 'provisional', items: ['Larger or bespoke websites', 'Scope and price confirmed in a quote'], cta: 'Discuss your project', svc: 'Website Machine' },
 ]
 
 const FLOW = [
@@ -256,7 +257,6 @@ export default function Home() {
           <nav className="tlinks" aria-label="Main">
             <a href="#top">Home</a>
             <a href="#website">Services</a>
-            <a href="#about">About</a>
             <a href="#enquiry">Contact</a>
           </nav>
           <div className="tcta">
@@ -274,7 +274,6 @@ export default function Home() {
             <a href="#receptionist" onClick={close}>AI Receptionist</a>
             <a href="#video-ads" onClick={close}>Product Video Ads</a>
             <a href="#automation" onClick={close}>Business Automation</a>
-            <a href="#about" onClick={close}>About</a>
             <a href="#enquiry" onClick={goEnquiry('Not sure')}>Contact / Enquire</a>
             <a className="mtel" href={`tel:${CONTACT.phone}`}>{CONTACT.phoneDisplay}</a>
           </nav>
@@ -307,12 +306,12 @@ export default function Home() {
           <div className="svgrid">
             <div className="svhead">
               <span className="eyebrow">01 &middot; Website Machine</span>
-              <h2>Professional websites that <span className="gt">get you enquiries.</span></h2>
+              <h2>Professional websites built to <span className="gt">turn visitors into enquiries.</span></h2>
               <p>Modern, mobile-first websites with clear calls to action, click-to-call and enquiry forms. We write it, build it and put it live &mdash; you don&rsquo;t touch a dashboard.</p>
               <ul className="tick">
                 <li>Mobile-friendly and fast</li>
                 <li>Enquiry form and click-to-call</li>
-                <li>Booking or enquiry capture on larger builds</li>
+                <li>Booking or enquiry options on larger packages</li>
                 <li>Works with our AI receptionist</li>
               </ul>
             </div>
@@ -325,7 +324,7 @@ export default function Home() {
           <div className="prices">
             {PRICES.map((p) => (
               <div key={p.key} className={`pcard${p.pop ? ' pop' : ''}`}>
-                {p.pop && <span className="poptag">Most popular</span>}
+                {p.pop && <span className="poptag">{p.tag}</span>}
                 <h3>{p.name}</h3>
                 <div className="pprice"><b>{p.price}</b> <span>{p.per}</span></div>
                 <ul>{p.items.map((t) => <li key={t}><Ico d={I2.check} s={13} w={2.6} />{t}</li>)}</ul>
@@ -342,11 +341,11 @@ export default function Home() {
             <div className="svhead">
               <span className="eyebrow">02 &middot; AI Receptionist</span>
               <h2>Never miss <span className="gt">another enquiry.</span></h2>
-              <p>Our AI receptionist answers your calls 24/7, captures enquiries and takes bookings, so you never miss business again.</p>
+              <p>Our AI receptionist answers your calls 24/7, captures enquiries and takes bookings where set up for your business, so you never miss an enquiry.</p>
               <ul className="tick">
                 <li>Answers calls day and night</li>
                 <li>Captures caller details</li>
-                <li>Books appointments where needed</li>
+                <li>Appointment booking where set up for your business</li>
                 <li>Set up, tested and launched by us</li>
               </ul>
             </div>
@@ -442,7 +441,7 @@ export default function Home() {
 
       <footer className="site">
         <div className="wrap fin">
-          <div className="fbrand" id="about">
+          <div className="fbrand">
             <a className="lock" href="#top" aria-label="NONSTOP AI">
               <img className="m" src="/nonstop-mark.png" alt="" />
               <img className="w" src="/nonstop-wordmark.png" alt="NONSTOP AI" />
