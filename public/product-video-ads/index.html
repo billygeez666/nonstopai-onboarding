@@ -33,8 +33,10 @@
     </div>
     <p class="note" style="margin-top:14px">No payment up front. Tell us about your product and we&rsquo;ll come back with a quote.</p>
   </div>
-  <div class="vid" id="hero-vid">
-    <video id="hero-video" data-auto data-src="/media/video-ads/sneaker-ad.mp4" data-audio-src="/media/video-ads/sneaker-ad-audio.mp4" poster="/media/video-ads/sneaker-ad-poster.jpg" muted loop playsinline preload="none" width="1280" height="720" aria-label="Sample AI-generated sneaker advert with purple lightning"></video>
+  <div class="vid autovid" id="hero-vid">
+    <video id="hero-video" data-src="/media/video-ads/sneaker-ad.mp4" data-audio-src="/media/video-ads/sneaker-ad-audio.mp4" poster="/media/video-ads/sneaker-ad-poster.jpg" muted playsinline disableremoteplayback preload="none" width="1280" height="720" aria-label="Sample AI-generated sneaker advert with purple lightning"></video>
+    <button class="playbig" id="hero-play" type="button" aria-label="Play video"><span>&#9654;</span></button>
+    <button class="vbtn rep" id="hero-replay" type="button" aria-label="Replay video">&#8635;</button>
     <button class="vbtn" id="hero-sound" type="button" aria-pressed="false" aria-label="Play video with sound">&#128263;</button>
     <div class="tag">AI-generated sample ad made by NONSTOP AI, not client work</div>
   </div>
