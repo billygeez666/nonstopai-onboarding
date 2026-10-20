@@ -1,0 +1,26 @@
+Hi,
+
+{{INTRO_LINE}}
+
+Enquiries arrive by form, call and message, and following each one up by hand is easy to put off. Quotes and leads can go cold while you are busy.
+
+We build simple automations around how your business already works: every enquiry logged and sent to you, prompt replies and reminders, confirmations, and records kept in one place.
+
+- Enquiries captured: Logged and alerted to you whichever way they arrive.
+- Follow-ups handled: Replies and reminders go out without you chasing.
+- Free assessment first: We map where time is lost, then send a clear quote.
+
+Book A Free Assessment:
+https://nonstopai.netlify.app/business-automation/?utm_source=email&utm_medium=cold&utm_campaign=business_automation_v1&utm_content=cta
+
+Automation is quoted per project. If something is not worth automating, we will tell you.
+
+Alex
+NONSTOP AI
+
+--
+Sando Aleksanders, trading as NONSTOP AI, 5 Saint Peters Road, Wisbech, Cambridgeshire, PE13 2NB, United Kingdom. Tel 07360 266496. Email aibookingsystems@gmail.com.
+You are receiving this because we contact UK businesses about our services, using your published business contact details.
+Privacy policy: https://nonstopai.netlify.app/privacy/
+Unsubscribe: https://lqywsbqctoydtdqvjzzw.supabase.co/functions/v1/re-unsubscribe?t={{OPTOUT_TOKEN}}
+Or reply with the word UNSUBSCRIBE.

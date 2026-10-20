@@ -1,0 +1,28 @@
+Hi,
+
+{{INTRO_LINE}}
+
+When you are on a job or with a customer, the phone still rings. A caller who does not get an answer may try someone else.
+
+Our AI receptionist answers your calls 24/7 in your business name, takes the caller's name, number and what they need, and sends you the details so you can ring back. It tells callers it is an AI.
+
+- Answers 24/7: Every call, day or night, in your business name.
+- Captures the enquiry: Name, number and what they want, sent straight to you.
+- Set up for you: We configure it with your services and hours, test it and launch it.
+
+Hear It And See How It Works:
+https://nonstopai.netlify.app/ai-receptionist/?utm_source=email&utm_medium=cold&utm_campaign=ai_receptionist_v2&utm_content=cta
+
+The price, plainly: £299 setup + £99 per month. Includes a professional website, business phone number and the AI receptionist. Rolling monthly, no long-term contract.
+
+It answers calls you would otherwise miss. It will not win you work on its own, and we do not sell marketing or SEO.
+
+Alex
+NONSTOP AI
+
+--
+Sando Aleksanders, trading as NONSTOP AI, 5 Saint Peters Road, Wisbech, Cambridgeshire, PE13 2NB, United Kingdom. Tel 07360 266496. Email aibookingsystems@gmail.com.
+You are receiving this because we contact UK businesses about our services, using your published business contact details.
+Privacy policy: https://nonstopai.netlify.app/privacy/
+Unsubscribe: https://lqywsbqctoydtdqvjzzw.supabase.co/functions/v1/re-unsubscribe?t={{OPTOUT_TOKEN}}
+Or reply with the word UNSUBSCRIBE.

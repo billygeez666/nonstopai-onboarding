@@ -1,0 +1,28 @@
+Hi,
+
+{{INTRO_LINE}}
+
+Many people look a business up on their phone first. If the number or an enquiry button is hard to find, some of them may go elsewhere.
+
+Website Machine is a professional one-page website built for your business: your services, your area, and clear call and enquiry buttons. We build it, you approve it, and we launch it.
+
+- Built for your business: Your services, area and contact details, not a generic template.
+- Easy to contact you: Call and enquiry buttons that work properly on a phone.
+- Done for you: We build and launch it. There is nothing for you to set up.
+
+See How It Works:
+https://nonstopai.netlify.app/?utm_source=email&utm_medium=cold&utm_campaign=website_machine_v2&utm_content=cta#website
+
+The price, plainly: £99 one-off for a one-page website. No monthly fee.
+
+A website does not bring customers by itself, and we do not sell SEO or marketing.
+
+Alex
+NONSTOP AI
+
+--
+Sando Aleksanders, trading as NONSTOP AI, 5 Saint Peters Road, Wisbech, Cambridgeshire, PE13 2NB, United Kingdom. Tel 07360 266496. Email aibookingsystems@gmail.com.
+You are receiving this because we contact UK businesses about our services, using your published business contact details.
+Privacy policy: https://nonstopai.netlify.app/privacy/
+Unsubscribe: https://lqywsbqctoydtdqvjzzw.supabase.co/functions/v1/re-unsubscribe?t={{OPTOUT_TOKEN}}
+Or reply with the word UNSUBSCRIBE.
