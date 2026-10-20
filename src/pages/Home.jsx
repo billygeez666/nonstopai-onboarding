@@ -96,6 +96,9 @@ function HeroScene() {
         <div className="lbase" />
       </div>
       <div className="aiphone"><span>AI</span></div>
+      <div className="notif n1"><i className="nd" />New enquiry received</div>
+      <div className="notif n2"><i className="nd g" />Call answered 24/7</div>
+      <div className="floor" />
     </div>
   )
 }
@@ -243,6 +246,17 @@ export default function Home() {
   useMeta(META)
   const [menu, setMenu] = useState(false)
   const [demoOpen, setDemoOpen] = useState(false)
+  useEffect(() => {
+    const root = document.querySelector('.nsh3')
+    if (!root || reduceMotion() || !('IntersectionObserver' in window)) return
+    const els = [...root.querySelectorAll('.sv .svhead, .sv .svmedia, .sv .svcta, .pcard, .fstep, .closing')]
+    root.classList.add('js-rv')
+    const io = new IntersectionObserver((es) => {
+      es.forEach((e) => { if (e.isIntersecting) { e.target.classList.add('in'); io.unobserve(e.target) } })
+    }, { threshold: 0.12, rootMargin: '0px 0px -6% 0px' })
+    els.forEach((el) => io.observe(el))
+    return () => { io.disconnect(); root.classList.remove('js-rv') }
+  }, [])
   const goEnquiry = (service) => () => { preselect(service); setMenu(false) }
   const close = () => setMenu(false)
 
