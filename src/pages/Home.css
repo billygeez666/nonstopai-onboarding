@@ -571,3 +571,5 @@
 .nsh3 .eyebrow{letter-spacing:.22em}
 @media(min-width:900px){.nsh3 .sv{padding:60px 56px 60px}.nsh3 .pg{gap:26px}.nsh3 .prices{margin-top:52px}.nsh3 .svgrid{column-gap:64px}}
 .nsh3 .panel.sv{background:linear-gradient(165deg,#0b1224 0%,#070a14 65%)}
+@media(min-width:800px){.nsh3 .prices{grid-template-columns:repeat(3,1fr);gap:18px}}
+@media(min-width:1100px){.nsh3 .prices{grid-template-columns:repeat(3,1fr);gap:20px}}

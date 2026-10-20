@@ -104,7 +104,7 @@ function HeroScene() {
 }
 
 const DEMOS = [
-  { id: 'cardiff', name: 'Cardiff Plumbing', note: 'Click-to-call and quote request', d: '/media/website-demos/cardiff-plumbing-desktop.jpg', m: '/media/website-demos/cardiff-plumbing.jpg', href: 'https://cardiff-plumbing-preview.netlify.app/' },
+  { id: 'ironside', name: 'Ironside Garage', note: 'Sample build \u2014 fictional business', d: '/media/website-demos/ironside-garage-desktop.jpg', m: '/media/website-demos/ironside-garage.jpg', href: '/samples/ironside-garage/' },
   { id: 'northgate', name: 'Northgate Barbers', note: 'Sample build \u2014 fictional business', d: '/media/website-demos/northgate-barbers-desktop.jpg', m: '/media/website-demos/northgate-barbers.jpg', href: '/samples/northgate-barbers/' },
   { id: 'clearline', name: 'Clearline Exteriors', note: 'Sample build — fictional company', d: '/media/website-demos/clearline-exteriors-desktop.jpg', m: '/media/website-demos/clearline-exteriors.jpg', href: 'https://website-machine-sample-clearline.netlify.app/' },
   { id: 'brightside', name: 'Brightside Home Cleaning', note: 'Sample build \u2014 fictional business', d: '/media/website-demos/brightside-cleaning-desktop.jpg', m: '/media/website-demos/brightside-cleaning.jpg', href: '/samples/brightside-cleaning/' },
@@ -232,7 +232,6 @@ const PRICES = [
   { key: 'starter', name: 'Starter', price: '\u00a399', per: 'one-off', items: ['One-page website', 'Contact form', 'Mobile friendly'], cta: 'Get started', svc: 'Website Machine' },
   { key: 'growth', name: 'Growth', price: '\u00a3199', per: 'setup + \u00a350/month', items: ['Multi-page website', 'Booking or enquiry functionality, set up for your business', 'Hosting and support'], cta: 'Get started', svc: 'Website Machine' },
   { key: 'business', name: 'Business', price: '\u00a3299', per: 'setup + \u00a399/month', items: ['Website with AI receptionist', 'Business phone number', 'Set up, tested and launched by us'], cta: 'Get started', svc: 'AI Receptionist', pop: true, tag: 'Includes AI receptionist' },
-  { key: 'custom', name: 'Custom', price: '\u00a3599+', per: 'provisional', items: ['Larger or bespoke websites', 'Scope and price confirmed in a quote'], cta: 'Discuss your project', svc: 'Website Machine' },
 ]
 
 const FLOW = [
@@ -346,6 +345,7 @@ export default function Home() {
               </div>
             ))}
           </div>
+          <p className="pfine">Need something larger or different? Send an enquiry and we&rsquo;ll scope it with you first.</p>
           <p className="pfine">A website does not by itself bring in customers &mdash; we don&rsquo;t sell advertising or SEO.</p>
         </section>
 

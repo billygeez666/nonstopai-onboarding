@@ -383,8 +383,8 @@ export default function Signup() {
                 How you take bookings today
               </h2>
               <p className="text-paper-dim text-sm leading-relaxed mb-5">
-                This just helps us build the right system. Your receptionist goes live in
-                48 hours either way.
+                This just helps us build the right system. We’ll confirm your go-live date once
+                your receptionist is built and tested.
               </p>
             </div>
 

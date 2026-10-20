@@ -7,7 +7,7 @@ import { getAttribution, newEventId, trackLead } from '../lib/metaPixel.js'
 // Does NOT touch /api/demo-request, Supabase or the signup/Stripe flow.
 const SERVICES = ['Website Machine', 'AI Receptionist', 'Product Video Ads', 'Business Automation', 'Not sure']
 const PACKAGES = {
-  'Website Machine': ['One-page website', 'Website with booking or enquiry system', 'Not sure yet'],
+  'Website Machine': ['One-page website', 'Website with booking or enquiry system', 'Larger or custom website', 'Not sure yet'],
   'AI Receptionist': ['AI receptionist with business number', 'Receptionist plus website', 'Not sure yet'],
   'Product Video Ads': ['Single product advert', 'Several adverts', 'Not sure yet'],
   'Business Automation': ['Enquiry & follow-up automation', 'Custom workflow', 'Not sure yet'],
