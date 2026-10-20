@@ -374,7 +374,6 @@ export default function Home() {
                 <div className="demopanel" role="region" aria-label="Live demo lines">
                   <span>Call a live demo line &mdash; no signup:</span>
                   <a className="dial" href="tel:+447449839233"><span>Taxi demo</span><b>07449 839233</b></a>
-                  <a className="dial" href="tel:+447460045201"><span>Takeaway demo</span><b>07460 045201</b></a>
                 </div>
               )}
             </div>
