@@ -1,7 +1,7 @@
 // Meta Pixel helpers — NONSTOP AI dataset 1748159716430306.
-// The base code (fbq init + initial PageView) lives in index.html. SPA route
-// changes are tracked as PageView automatically by fbevents.js (pushState),
-// so no manual PageView calls are made from the app.
+// The Pixel is loaded by src/lib/consent.js ONLY after the visitor accepts advertising
+// cookies. Until then window.fbq does not exist and every call below is a silent no-op.
+// After consent, SPA route changes are tracked as PageView automatically (pushState).
 
 const ATTR_KEY = 'nsai_attribution'
 const ATTR_PARAMS = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term', 'fbclid']

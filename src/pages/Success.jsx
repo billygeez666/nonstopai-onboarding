@@ -14,7 +14,7 @@ const NEXT_STEPS = [
     body: 'We configure your AI receptionist with your routes, hours and the way you like jobs handled.',
   },
   {
-    label: 'WITHIN 24–48 HOURS',
+    label: 'GO LIVE',
     title: "You're live",
     body: "We'll email and text you once calls are being answered on your number.",
   },

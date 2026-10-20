@@ -1,0 +1,14 @@
+.nsc{position:fixed;left:0;right:0;bottom:0;z-index:100;padding:12px;font-family:"Inter",system-ui,sans-serif}
+.nsc-in{max-width:880px;margin:0 auto;display:flex;flex-direction:column;gap:14px;padding:16px 18px;border-radius:16px;
+  background:rgba(10,14,23,.97);border:1px solid #26314A;box-shadow:0 18px 60px -12px rgba(0,0,0,.8);color:#F2F4F9}
+@media(min-width:720px){.nsc-in{flex-direction:row;align-items:center;gap:24px}}
+.nsc-txt{flex:1}
+.nsc-txt b{font-family:"Sora",system-ui,sans-serif;font-size:.95rem}
+.nsc-txt p{margin:6px 0 0;font-size:.82rem;line-height:1.55;color:#9AA4BC}
+.nsc-txt a{color:#5CD9F5;text-decoration:underline}
+.nsc-btns{display:flex;gap:10px;flex:none}
+.nsc-btn{min-height:44px;min-width:110px;padding:0 20px;border-radius:12px;border:1px solid #3A4A6E;background:#151D30;color:#F2F4F9;
+  font:600 .9rem "Sora",system-ui,sans-serif;cursor:pointer}
+.nsc-btn:hover{border-color:#5CD9F5}
+.nsc-btn:focus-visible{outline:2px solid #5CD9F5;outline-offset:2px}
+@media(max-width:719px){.nsc-btns .nsc-btn{flex:1}}
