@@ -105,9 +105,9 @@ function HeroScene() {
 
 const DEMOS = [
   { id: 'cardiff', name: 'Cardiff Plumbing', note: 'Click-to-call and quote request', d: '/media/website-demos/cardiff-plumbing-desktop.jpg', m: '/media/website-demos/cardiff-plumbing.jpg', href: 'https://cardiff-plumbing-preview.netlify.app/' },
-  { id: 'wmplumbers', name: 'Website Machine for plumbers', note: 'Our \u00a399 one-page website offer', d: '/media/website-demos/website-machine-plumbers-desktop.jpg', m: '/media/website-demos/website-machine-plumbers.jpg', href: 'https://website-machine-plumbers.netlify.app/' },
+  { id: 'northgate', name: 'Northgate Barbers', note: 'Sample build \u2014 fictional business', d: '/media/website-demos/northgate-barbers-desktop.jpg', m: '/media/website-demos/northgate-barbers.jpg', href: '/samples/northgate-barbers/' },
   { id: 'clearline', name: 'Clearline Exteriors', note: 'Sample build — fictional company', d: '/media/website-demos/clearline-exteriors-desktop.jpg', m: '/media/website-demos/clearline-exteriors.jpg', href: 'https://website-machine-sample-clearline.netlify.app/' },
-  { id: 'roofers', name: 'Roofersites UK', note: 'Our £99 website offer for roofers', d: '/media/website-demos/roofersites-uk-desktop.jpg', m: '/media/website-demos/roofersites-uk.jpg', href: 'https://roofersites-uk.netlify.app/' },
+  { id: 'brightside', name: 'Brightside Home Cleaning', note: 'Sample build \u2014 fictional business', d: '/media/website-demos/brightside-cleaning-desktop.jpg', m: '/media/website-demos/brightside-cleaning.jpg', href: '/samples/brightside-cleaning/' },
 ]
 
 function Showroom() {
