@@ -1,17 +1,66 @@
-import { useEffect } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import useMeta from '../hooks/useMeta.js'
 import { CONTACT } from '../config/contact.js'
 import SocialLinks from '../components/SocialLinks.jsx'
+import ServiceEnquiryForm, { PRESELECT_EVENT } from '../components/ServiceEnquiryForm.jsx'
+import { openCookieSettings } from '../lib/consent.js'
 import './Home.css'
 
 const META = {
-  title: 'NONSTOP AI — Websites, AI receptionists and booking systems for service businesses',
+  title: 'NONSTOP AI — Websites, AI receptionists, product video ads and business automation',
   description:
-    'NONSTOP AI builds the systems that answer your customers and capture the work — professional website, 24/7 AI receptionist, booking and enquiry capture, and follow-up. Installed and supported for you, on your own number.',
+    'NONSTOP AI sets up four AI-powered services for your business: a professional website, a 24/7 AI receptionist, product video ads and business automation. Enquire first — no payment up front.',
 }
 
 const SIGNUP = '/signup' // internal react-router route — unchanged
+
+const Ic = ({ d, c = '#5CD9F5' }) => (
+  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={d} /></svg>
+)
+const ICON = {
+  web: 'M3 5.5A2.5 2.5 0 0 1 5.5 3h13A2.5 2.5 0 0 1 21 5.5v13a2.5 2.5 0 0 1-2.5 2.5h-13A2.5 2.5 0 0 1 3 18.5ZM3 9h18M7 6h.01M10 6h.01',
+  phone: 'M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1 1 .4 1.9.7 2.8a2 2 0 0 1-.5 2.1L8.1 9.9a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.8.7a2 2 0 0 1 1.7 2Z',
+  video: 'M4 5h11a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2ZM17 10l5-3v10l-5-3',
+  flow: 'M5 4h5v5H5zM14 15h5v5h-5zM7.5 9v3a2 2 0 0 0 2 2H14M16.5 15v-1',
+}
+
+function preselect(service) {
+  window.dispatchEvent(new CustomEvent(PRESELECT_EVENT, { detail: service }))
+}
+
+// Tap-to-play sample video. Nothing is downloaded until the visitor presses play.
+function VideoCard({ src, audio, poster, label, w, h, tall }) {
+  const ref = useRef(null)
+  const [on, setOn] = useState(false)
+  const play = () => {
+    const v = ref.current
+    if (!v) return
+    document.querySelectorAll('.nsh video').forEach((o) => { if (o !== v && !o.paused) o.pause() })
+    const url = audio || src
+    if (v.getAttribute('src') !== url) v.src = url
+    v.muted = false
+    v.playsInline = true
+    v.controls = true
+    setOn(true)
+    const p = v.play()
+    if (p && p.catch) {
+      p.catch(() => {
+        v.muted = true
+        const q = v.play()
+        if (q && q.catch) q.catch(() => { setOn(false); v.controls = false })
+      })
+    }
+  }
+  return (
+    <div className={`vid${tall ? ' tall' : ''}${on ? ' playing' : ''}`}>
+      <video ref={ref} poster={poster} playsInline preload="none" width={w} height={h} aria-label={label} onEnded={() => setOn(false)} />
+      {!on && (
+        <button type="button" className="playbig" onClick={play} aria-label={`Play: ${label}`}><span>&#9654;</span></button>
+      )}
+    </div>
+  )
+}
 
 export default function Home() {
   useMeta(META)
@@ -29,268 +78,267 @@ export default function Home() {
     return () => { handlers.forEach(([d, h]) => d.removeEventListener('toggle', h)) }
   }, [])
 
+  const goEnquiry = (service) => () => preselect(service)
+
   return (
     <div className="nsh">
-        <div className="nav">
-          <div className="wrap navin">
+      <div className="nav">
+        <div className="wrap navin">
+          <a className="lock" href="#top" aria-label="NONSTOP AI">
+            <img className="m" src="/nonstop-mark.png" alt="" />
+            <img className="w" src="/nonstop-wordmark.png" alt="NONSTOP AI" />
+          </a>
+          <nav className="navlinks" aria-label="Main">
+            <a href="#website">Websites</a>
+            <a href="#receptionist">AI Receptionist</a>
+            <a href="#video-ads">Video Ads</a>
+            <a href="#automation">Automation</a>
+            <a href="#faq">FAQ</a>
+          </nav>
+          <div className="navcta">
+            <SocialLinks className="social-head" />
+            <a className="navtel" href={`tel:${CONTACT.phone}`}>{CONTACT.phoneDisplay}</a>
+            <a className="btn btn-primary" href="#enquiry" onClick={goEnquiry('Not sure')}>Enquire</a>
+          </div>
+        </div>
+      </div>
+
+      {/* ---------------- HERO ---------------- */}
+      <section className="hero" id="top">
+        <div className="wrap herogrid">
+          <div>
+            <span className="eyebrow">AI systems for UK businesses</span>
+            <h1>A business that <span className="gt">never stops.</span></h1>
+            <p className="lede">
+              We set up four AI-powered services for you: a professional website, a 24/7 AI receptionist, product video
+              ads and business automation. You tell us what you need — we build it and put it live.
+            </p>
+            <div className="herobtns">
+              <a className="btn btn-primary" href="#enquiry" onClick={goEnquiry('Not sure')}>Send an enquiry</a>
+              <a className="btn btn-ghost" href="#services">See the four services</a>
+            </div>
+            <ul className="ticks">
+              <li>Enquire first — no payment up front</li>
+              <li>Set up for you</li>
+              <li>Keep your own number</li>
+            </ul>
+          </div>
+
+          <div className="quad" id="services">
+            <a className="qt" href="#website"><span className="qi"><Ic d={ICON.web} c="#5CD9F5" /></span><b>Website Machine</b><span>Professional, mobile-first websites.</span></a>
+            <a className="qt" href="#receptionist"><span className="qi"><Ic d={ICON.phone} c="#6FA0F7" /></span><b>AI Receptionist</b><span>Answers every call, day and night.</span></a>
+            <a className="qt" href="#video-ads"><span className="qi"><Ic d={ICON.video} c="#9B6BF5" /></span><b>Product Video Ads</b><span>AI-made adverts for your product.</span></a>
+            <a className="qt" href="#automation"><span className="qi"><Ic d={ICON.flow} c="#D24BF5" /></span><b>Business Automation</b><span>Less admin, faster follow-up.</span></a>
+          </div>
+        </div>
+      </section>
+
+      {/* ---------------- WEBSITE MACHINE ---------------- */}
+      <section className="sec" id="website">
+        <div className="wrap split">
+          <div>
+            <span className="eyebrow">01 · Website Machine</span>
+            <h2>A professional website, <span className="gt">built for you.</span></h2>
+            <p className="body">
+              A fast, mobile-first website with clear calls to action, click-to-call and an enquiry form, so people who
+              find you know how to get in touch. We write it, build it and put it live — you don&rsquo;t touch a dashboard.
+            </p>
+            <ul className="list">
+              <li>One-page websites from <b>£99</b> (one-off)</li>
+              <li>Booking or enquiry capture available on larger builds</li>
+              <li>Works with the AI receptionist and automation below</li>
+            </ul>
+            <p className="fine">A website does not by itself bring in customers — we don&rsquo;t sell advertising or SEO.</p>
+            <div className="herobtns">
+              <a className="btn btn-primary" href="#enquiry" onClick={goEnquiry('Website Machine')}>Enquire about a website</a>
+            </div>
+          </div>
+          <div className="mock" aria-hidden="true">
+            <div className="mbar"><i /><i /><i /><span>yourbusiness.co.uk</span></div>
+            <div className="mbody">
+              <div className="mh" /><div className="ml w70" /><div className="ml w50" />
+              <div className="mrow"><div className="mb" /><div className="mb g" /></div>
+              <div className="mcards"><div /><div /><div /></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* ---------------- AI RECEPTIONIST ---------------- */}
+      <section className="sec sec-tint" id="receptionist">
+        <div className="wrap split rev">
+          <div className="ticket" aria-label="Example of a call being answered">
+            <div className="tbar"><span className="lbl">Your front desk</span><span className="livechip"><span className="dot" /> Live</span></div>
+            <div className="tbody">
+              <div className="callrow">
+                <div className="avatar"><Ic d={ICON.phone} /></div>
+                <div><div className="num">07911 224 488</div><div className="meta">Missed at 11:47pm</div></div>
+                <div className="stat">Answered ✓</div>
+              </div>
+              <div className="tsteps">
+                <div className="line on"><span className="tagx">Ring 1</span><span className="txt">“Good evening, how can I help?”</span></div>
+                <div className="line on"><span className="tagx">Caller</span><span className="txt">“Do you do a website with online booking?”</span></div>
+                <div className="line on"><span className="tagx">Captured</span><span className="txt">Name · business · phone · what they need</span></div>
+                <div className="line on"><span className="tagx">Sent</span><span className="txt">Details in your inbox before they hang up</span></div>
+              </div>
+            </div>
+            <div className="tfoot"><span>Example call</span><span>24/7</span></div>
+          </div>
+          <div>
+            <span className="eyebrow">02 · AI Receptionist</span>
+            <h2>Every call answered, <span className="gt">day or night.</span></h2>
+            <p className="body">
+              An AI receptionist on your business number takes the booking or the enquiry, captures the caller&rsquo;s
+              details and notifies you straight away. Your existing number stays your number.
+            </p>
+            <ul className="list">
+              <li><b>£299</b> setup + <b>£99</b>/month — website, business number and receptionist as one package</li>
+              <li>Rolling monthly subscription, no long-term contract</li>
+              <li>Set up, tested and launched by us</li>
+            </ul>
+            <div className="herobtns">
+              <a className="btn btn-primary" href="/ai-receptionist/">See the AI receptionist</a>
+              <Link className="btn btn-ghost" to={SIGNUP}>Get started</Link>
+            </div>
+            <div className="dem">
+              <span className="eyebrow">Hear it live — real lines, no signup</span>
+              <a className="dial" href="tel:+447449839233"><span>Taxi demo</span><b>07449 839233</b></a>
+              <a className="dial" href="tel:+447460045201"><span>Takeaway demo</span><b>07460 045201</b></a>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* ---------------- PRODUCT VIDEO ADS ---------------- */}
+      <section className="sec" id="video-ads">
+        <div className="wrap">
+          <div className="sechead">
+            <span className="eyebrow">03 · Product Video Ads</span>
+            <h2>AI-made adverts for <span className="gt">the way people scroll.</span></h2>
+            <p>Cinematic short product ads for Instagram, TikTok, Facebook and your website. Tap to play our own sample adverts.</p>
+          </div>
+          <div className="vgrid">
+            <VideoCard tall src="/media/video-ads/perfume-ad.mp4" audio="/media/video-ads/perfume-ad-audio.mp4" poster="/media/video-ads/perfume-ad-poster.jpg" label="Sample AI-generated perfume advert" w={720} h={1294} />
+            <VideoCard src="/media/video-ads/sneaker-ad.mp4" audio="/media/video-ads/sneaker-ad-audio.mp4" poster="/media/video-ads/sneaker-ad-poster.jpg" label="Sample AI-generated sneaker advert" w={1280} h={720} />
+            <VideoCard tall src="/media/video-ads/skincare-ad.mp4" poster="/media/video-ads/skincare-ad-poster.jpg" label="Sample AI-generated skincare advert" w={720} h={1294} />
+          </div>
+          <p className="fine">These are NONSTOP AI&rsquo;s own sample ads, not client work. Priced per project — quote before you pay.</p>
+          <div className="herobtns">
+            <a className="btn btn-primary" href="/product-video-ads/">Explore Product Video Ads</a>
+            <a className="btn btn-ghost" href="#enquiry" onClick={goEnquiry('Product Video Ads')}>Request a quote</a>
+          </div>
+        </div>
+      </section>
+
+      {/* ---------------- BUSINESS AUTOMATION ---------------- */}
+      <section className="sec sec-tint" id="automation">
+        <div className="wrap split">
+          <div>
+            <span className="eyebrow">04 · Business Automation</span>
+            <h2>Less admin. <span className="gt">Faster follow-up.</span></h2>
+            <p className="body">
+              We connect the tools you already use so enquiries, notifications, follow-ups and reports happen
+              automatically — scoped to how your business actually runs, not sold off a shelf.
+            </p>
+            <ul className="list">
+              <li>Instant alerts when a new enquiry arrives</li>
+              <li>Automatic customer follow-up messages</li>
+              <li>Simple reporting on what is coming in</li>
+            </ul>
+            <p className="fine">Quote-only: every business is different, so we scope it with you first.</p>
+            <div className="herobtns">
+              <a className="btn btn-primary" href="/business-automation/">Explore Business Automation</a>
+              <a className="btn btn-ghost" href="#enquiry" onClick={goEnquiry('Business Automation')}>Request a quote</a>
+            </div>
+          </div>
+          <div className="flow" role="img" aria-label="Example workflow: enquiry arrives, alert sent, follow-up queued, recorded">
+            <span className="flowtag">Example workflow</span>
+            <div className="fn"><i>1</i><span><b>Enquiry arrives</b><small>Form, call or message</small></span></div>
+            <div className="fl" />
+            <div className="fn"><i>2</i><span><b>You&rsquo;re alerted</b><small>Email the moment it lands</small></span></div>
+            <div className="fl" />
+            <div className="fn"><i>3</i><span><b>Follow-up queued</b><small>Customer hears back quickly</small></span></div>
+            <div className="fl" />
+            <div className="fn"><i>4</i><span><b>Recorded</b><small>One place, nothing lost</small></span></div>
+          </div>
+        </div>
+      </section>
+
+      {/* ---------------- HOW IT WORKS ---------------- */}
+      <section className="sec" id="how">
+        <div className="wrap">
+          <div className="sechead">
+            <span className="eyebrow">How it works</span>
+            <h2>Enquire first. <span className="gt">Pay only once we&rsquo;ve agreed.</span></h2>
+          </div>
+          <ol className="steps">
+            <li><b>Tell us what you need</b><span>Send a short enquiry — pick a service or say you&rsquo;re not sure.</span></li>
+            <li><b>We review and reply</b><span>We confirm the scope and send a clear quote or next step by email.</span></li>
+            <li><b>You agree</b><span>Nothing is charged at enquiry stage. Payment comes after you&rsquo;ve agreed the work.</span></li>
+            <li><b>We build and launch</b><span>We set it up, test it and put it live for you.</span></li>
+          </ol>
+        </div>
+      </section>
+
+      {/* ---------------- FAQ ---------------- */}
+      <section className="sec sec-tint" id="faq">
+        <div className="wrap faqwrap">
+          <div className="sechead"><span className="eyebrow">FAQ</span><h2>Good to know.</h2></div>
+          <div className="faq">
+            <details open><summary>Do I pay when I enquire? <span className="chev">+</span></summary><div className="ans">No. The enquiry form is free to send and no payment is taken. You are only asked to pay after you&rsquo;ve agreed the work.</div></details>
+            <details><summary>Can I keep my existing phone number? <span className="chev">+</span></summary><div className="ans">Yes. For the AI receptionist you keep the number your customers already have. We set up the answering behind it.</div></details>
+            <details><summary>Can I try the AI receptionist first? <span className="chev">+</span></summary><div className="ans">Yes — call either live demo line in the AI Receptionist section. No signup, no card.</div></details>
+            <details><summary>How much do the video ads and automation cost? <span className="chev">+</span></summary><div className="ans">Both are priced per project, so we quote after your enquiry. You&rsquo;ll see a price before you pay anything.</div></details>
+            <details><summary>What if I want to cancel the receptionist? <span className="chev">+</span></summary><div className="ans">The £99/month is a rolling monthly subscription. There is no long-term contract to sign.</div></details>
+          </div>
+        </div>
+      </section>
+
+      {/* ---------------- ENQUIRY ---------------- */}
+      <section className="sec" id="enquiry">
+        <div className="wrap enq">
+          <div className="sechead center">
+            <span className="eyebrow">Get started</span>
+            <h2>Tell us what you <span className="gt">need.</span></h2>
+            <p>Takes about a minute. No payment needed. Prefer to talk? Call <a className="tl" href={`tel:${CONTACT.phone}`}>{CONTACT.phoneDisplay}</a>.</p>
+          </div>
+          <ServiceEnquiryForm />
+        </div>
+      </section>
+
+      <footer className="site">
+        <div className="wrap fin">
+          <div className="fbrand">
             <a className="lock" href="#top" aria-label="NONSTOP AI">
               <img className="m" src="/nonstop-mark.png" alt="" />
               <img className="w" src="/nonstop-wordmark.png" alt="NONSTOP AI" />
             </a>
-            <nav className="navlinks">
-              <a href="#services">Services</a>
-              <a href="#industries">Industries</a>
-              <a href="#demos">Live demos</a>
-              <a href="#pricing">Pricing</a>
-              <a href="#contact">Contact</a>
-            </nav>
-            <div className="navcta">
-              <SocialLinks className="social-head" />
-              <a className="navtel" href={`tel:${CONTACT.phone}`}>{CONTACT.phoneDisplay}</a>
-              <Link className="btn btn-primary" to={SIGNUP}>Get started</Link>
+            <p>Built for businesses that never want to miss another customer. United Kingdom.</p>
+            <SocialLinks className="social-foot" showLabels />
+          </div>
+          <div className="fcols">
+            <div className="fcol">
+              <span className="h">Services</span>
+              <a href="#website">Website Machine</a>
+              <a href="#receptionist">AI Receptionist</a>
+              <a href="/product-video-ads/">Product Video Ads</a>
+              <a href="/business-automation/">Business Automation</a>
+            </div>
+            <div className="fcol">
+              <span className="h">Industries</span>
+              <Link to="/taxi">Taxi OS</Link>
+              <Link to="/food">FOOD OS</Link>
+            </div>
+            <div className="fcol">
+              <span className="h">Get in touch</span>
+              <a href={`tel:${CONTACT.phone}`}>{CONTACT.phoneDisplay}</a>
+              <a href={`mailto:${CONTACT.email}`}>Email us</a>
+              <a href="/privacy/">Privacy</a>
+              <button type="button" className="linkbtn" onClick={openCookieSettings}>Cookie settings</button>
             </div>
           </div>
         </div>
-
-        <section className="hero" id="top">
-          <div className="wrap herogrid">
-            <div>
-              <div className="kicker"><span className="amt gt">£99</span><span className="per">/ month</span></div>
-              <h1>Turn missed calls into <span className="gt">paying customers.</span></h1>
-              <p className="lede">A complete business system — professional website, 24/7 AI receptionist, booking and enquiry capture, and SMS follow-ups — installed and supported for you, on your own number.</p>
-              <div className="herobtns">
-                <Link className="btn btn-primary" to={SIGNUP}>Get started</Link>
-                <a className="btn btn-ghost" href="#demos">Hear it live</a>
-              </div>
-              <ul className="ticks">
-                <li>Keep your number</li>
-                <li>Live in 48 hours</li>
-                <li>£299 setup</li>
-              </ul>
-            </div>
-
-            <div className="ticket" aria-label="Example of a call being answered">
-              <div className="tbar">
-                <span className="lbl">Your front desk</span>
-                <span className="livechip"><span className="dot"></span> Live</span>
-              </div>
-              <div className="tbody">
-                <div className="callrow">
-                  <div className="avatar">
-                    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#5CD9F5" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1 1 .4 1.9.7 2.8a2 2 0 0 1-.5 2.1L8.1 9.9a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.8.7a2 2 0 0 1 1.7 2Z"/></svg>
-                  </div>
-                  <div>
-                    <div className="num">07911 224 488</div>
-                    <div className="meta">Missed at 11:47pm</div>
-                  </div>
-                  <div className="stat">Answered ✓</div>
-                </div>
-                <div className="tsteps">
-                  <div className="line on"><span className="tagx">Ring 1</span><span className="txt">“Good evening, NONSTOP AI — how can I help?”</span></div>
-                  <div className="line on"><span className="tagx">Caller</span><span className="txt">“Do you do a website with online booking?”</span></div>
-                  <div className="line on"><span className="tagx">Captured</span><span className="txt">Name · business · phone · what they need</span></div>
-                  <div className="line on"><span className="tagx">Sent</span><span className="txt">Details in your inbox before they hang up</span></div>
-                </div>
-              </div>
-              <div className="tfoot"><span>Never engaged</span><span><b>0 missed</b> · 24/7</span></div>
-            </div>
-          </div>
-        </section>
-
-        <section className="sec" id="services">
-          <div className="wrap">
-            <div className="sechead">
-              <span className="eyebrow">What we build</span>
-              <h2>More than an <span className="gt">AI receptionist.</span></h2>
-              <p>NONSTOP AI builds the systems that answer your customers and capture the work — the website, the phone line, the booking, and the follow-up behind them.</p>
-            </div>
-            <div className="caps">
-              <div className="cap">
-                <div className="ic"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="#5CD9F5" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1 1 .4 1.9.7 2.8a2 2 0 0 1-.5 2.1L8.1 9.9a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.8.7a2 2 0 0 1 1.7 2Z"/></svg></div>
-                <h3>AI receptionists &amp; phone assistants</h3>
-                <p>Answers every call, day or night, in one ring. Takes the booking or the enquiry, and notifies you straight away. Your existing number stays your number.</p>
-              </div>
-              <div className="cap">
-                <div className="ic"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="#6FA0F7" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="3.5" width="19" height="16" rx="2.5"/><path d="M2.5 8.5h19M6 6h.01M8.5 6h.01"/></svg></div>
-                <h3>Websites</h3>
-                <p>Fast, mobile-first sites built to bring in enquiries — clear calls to action, click-to-call, contact forms, and online booking on the higher packages.</p>
-              </div>
-              <div className="cap">
-                <div className="ic"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="#9B6BF5" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4.5" width="18" height="17" rx="2.5"/><path d="M3 9.5h18M8 2.5v4M16 2.5v4M8.5 14.5l2.5 2.5 4.5-4.5"/></svg></div>
-                <h3>Booking &amp; order systems</h3>
-                <p>Jobs, appointments and orders captured properly — on the phone and on the site — with the details you actually need to turn up and get paid.</p>
-              </div>
-              <div className="cap">
-                <div className="ic"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="#C160F5" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2Z"/><path d="M8 9h8M8 13h5"/></svg></div>
-                <h3>Enquiry capture</h3>
-                <p>Every call, form and message lands in one place with the caller's name, number and what they wanted — so nothing sits in a voicemail nobody checks.</p>
-              </div>
-              <div className="cap">
-                <div className="ic"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="#D24BF5" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 17V9M9.5 17V5M15 17v-6M20.5 17V7"/><path d="M2.5 20.5h19"/></svg></div>
-                <h3>Follow-up &amp; automation</h3>
-                <p>Automatic customer notifications, SMS follow-ups and reporting on what the phone is actually bringing in. Scoped to your business rather than sold off a shelf.</p>
-              </div>
-              <div className="cap">
-                <div className="ic"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="#5CD9F5" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2.5 3.5 7v10L12 21.5 20.5 17V7Z"/><path d="M3.5 7 12 11.6 20.5 7M12 21.5V11.6"/></svg></div>
-                <h3>Set up for you</h3>
-                <p>We build it, configure it and put it live — usually inside 48 hours. No dashboards to learn, no integrations to wire up yourself.</p>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        <section className="sec sec-tint" id="industries">
-          <div className="wrap">
-            <div className="sechead">
-              <span className="eyebrow">Who it's for</span>
-              <h2>Built for businesses that <span className="gt">live on the phone.</span></h2>
-              <p>If a missed call costs you a job, the system works the same way whatever trade you're in. These are industries our systems are built to serve.</p>
-            </div>
-            <div className="inds">
-              <div className="ind"><div className="ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#5CD9F5" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a4.5 4.5 0 0 1-5.9 5.9L4 17v3h3l4.8-4.8a4.5 4.5 0 0 0 5.9-5.9l-2.4 2.4-2.1-.6-.6-2.1Z"/></svg></div><b>Plumbers</b><span>Industry</span></div>
-              <div className="ind"><div className="ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#6FA0F7" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 4.5 13.5H11L10 22l8.5-11.5H12Z"/></svg></div><b>Electricians</b><span>Industry</span></div>
-              <div className="ind"><div className="ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#8B6BF5" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M20 4 8.1 16M8.1 8 20 20"/></svg></div><b>Barbers</b><span>Industry</span></div>
-              <div className="ind"><div className="ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#A85FF5" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2.5c2.5 3 4 5.4 4 7.5a4 4 0 0 1-8 0c0-2.1 1.5-4.5 4-7.5Z"/><path d="M5 21.5h14"/></svg></div><b>Beauty salons</b><span>Industry</span></div>
-              <div className="ind"><div className="ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#C160F5" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2.5v8a2.5 2.5 0 0 0 5 0v-8M8.5 10.5v11"/><path d="M17.5 2.5c-1.5 1.5-2 3.5-2 6s.7 3 2 3 2-.5 2-3-.5-4.5-2-6Zm0 9v10"/></svg></div><b>Restaurants &amp; takeaways</b><span className="demo">Live demo</span></div>
-              <div className="ind"><div className="ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#D24BF5" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 17.5h14M4 17.5v-4l1.8-5A2 2 0 0 1 7.7 7h8.6a2 2 0 0 1 1.9 1.5l1.8 5v4"/><path d="M4 13.5h16M7 20.5v-3M17 20.5v-3"/></svg></div><b>Garages</b><span>Industry</span></div>
-              <div className="ind"><div className="ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#5CD9F5" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 17.5h14M4 17.5v-4l1.8-5A2 2 0 0 1 7.7 7h8.6a2 2 0 0 1 1.9 1.5l1.8 5v4M9 3.5h6"/><path d="M7 20.5v-3M17 20.5v-3"/></svg></div><b>Taxi &amp; private hire</b><span className="demo">Live demo</span></div>
-              <div className="ind more"><b>+ other service businesses</b><span>Ask us</span></div>
-            </div>
-          </div>
-        </section>
-
-        {/* legacy anchor aliases — old links (#demo, #why, #founder) still land here */}
-        <span id="demo" />
-        <span id="why" />
-        <section className="sec" id="demos">
-          <div className="wrap">
-            <div className="sechead">
-              <span className="eyebrow">Live demo · no signup</span>
-              <h2>Don't trust us. <span className="gt">Phone it yourself.</span></h2>
-              <p>Two of our systems are running right now on real numbers. Call either one and test it exactly like a customer would. No signup, no card.</p>
-            </div>
-            <div className="demos">
-              <div className="demo">
-                <span className="badge"><span className="dot"></span> Live taxi demo</span>
-                <h3>This could be your taxi line.</h3>
-                <p>Book a taxi and hear it captured in seconds — pickup, destination, time, the lot.</p>
-                <a className="dial" href="tel:+447449839233"><span>Call the live taxi demo</span><span className="n">07449 839233</span></a>
-              </div>
-              <div className="demo">
-                <span className="badge"><span className="dot"></span> Live takeaway demo</span>
-                <h3>This could be your takeaway.</h3>
-                <p>Place an order and hear every detail captured, straight off the call.</p>
-                <a className="dial" href="tel:+447460045201"><span>Call the live takeaway demo</span><span className="n">07460 045201</span></a>
-              </div>
-            </div>
-            <p className="demohelp">On a laptop? Dial from your phone — it's a real line.</p>
-          </div>
-        </section>
-
-        <section className="sec sec-rule pricewrap" id="pricing">
-          <div className="wrap">
-            <div className="sechead center">
-              <span className="eyebrow">Pricing</span>
-              <h2>Everything you need to <span className="gt">stop missing customers.</span></h2>
-            </div>
-            <div className="pricecard">
-              <div className="ptag"><span className="big gt">£99</span><span className="per">/ month</span></div>
-              <p className="psetup">+ <b>£299</b> one-off setup</p>
-              <ul className="plist">
-                <li><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#5CD9F5" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m4 12.5 5 5L20 6.5"/></svg>Professional website</li>
-                <li><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#5CD9F5" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m4 12.5 5 5L20 6.5"/></svg>24/7 AI receptionist</li>
-                <li><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#7C8FF6" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m4 12.5 5 5L20 6.5"/></svg>Booking &amp; order capture</li>
-                <li><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#9B6BF5" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m4 12.5 5 5L20 6.5"/></svg>SMS follow-ups to customers</li>
-                <li><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#BC5BF5" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m4 12.5 5 5L20 6.5"/></svg>Keep your existing number</li>
-                <li><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#D24BF5" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m4 12.5 5 5L20 6.5"/></svg>Installed &amp; supported for you</li>
-              </ul>
-              <Link className="btn btn-primary" to={SIGNUP}>Get started</Link>
-              <p className="pnote">Secure checkout with Stripe</p>
-            </div>
-          </div>
-        </section>
-
-        <section className="sec" id="faq">
-          <div className="wrap">
-            <div className="sechead"><span className="eyebrow">FAQ</span><h2>Good to know.</h2></div>
-            <div className="faq">
-              <details open><summary>Keep my existing number? <span className="chev">+</span></summary><div className="ans">Yes. You keep the number your customers already have. We set up the answering behind it — nothing on your printed material or your Google listing has to change.</div></details>
-              <details><summary>How fast does it go live? <span className="chev">+</span></summary><div className="ans">Usually inside 48 hours of your details coming through. We configure it with your hours, services and the way you like jobs handled, then put it live.</div></details>
-              <details><summary>Can I try it before I pay? <span className="chev">+</span></summary><div className="ans">Yes — call either live demo above. No signup, no card.</div></details>
-              <details><summary>What if I want to cancel? <span className="chev">+</span></summary><div className="ans">The £99/month is a rolling monthly subscription. There is no long-term contract to sign.</div></details>
-            </div>
-          </div>
-        </section>
-
-        <span id="founder" />
-        <section className="sec belief" id="belief">
-          <div className="wrap">
-            <div className="beliefin">
-              <span className="eyebrow">What we believe</span>
-              <h2>Adapt. Automate. <span className="gt">Keep moving.</span></h2>
-              <span className="rule"></span>
-              <p>AI is changing how businesses operate. NONSTOP AI gives businesses practical systems to stay ahead — <b>not someday, but now.</b></p>
-            </div>
-          </div>
-        </section>
-
-        <section className="sec" id="contact">
-          <div className="wrap">
-            <div className="sechead"><span className="eyebrow">Talk to a human</span><h2>Questions? <span className="gt">Get in touch.</span></h2></div>
-            <div className="contacts">
-              <a className="cc" href={`tel:${CONTACT.phone}`}>
-                <div className="ic"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#5CD9F5" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1 1 .4 1.9.7 2.8a2 2 0 0 1-.5 2.1L8.1 9.9a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.8.7a2 2 0 0 1 1.7 2Z"/></svg></div>
-                <span className="k">Call us</span><span className="v">{CONTACT.phoneDisplay}</span>
-              </a>
-              <a className="cc" href={`mailto:${CONTACT.email}`}>
-                <div className="ic"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#9B6BF5" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="4.5" width="19" height="15" rx="2.5"/><path d="m3 6.5 9 6 9-6"/></svg></div>
-                <span className="k">Email</span><span className="v">{CONTACT.email}</span>
-              </a>
-              <a className="cc" href={CONTACT.facebook}>
-                <div className="ic"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#D24BF5" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M15 2.5h-2.5A4.5 4.5 0 0 0 8 7v3H5.5v4H8v7.5h4V14h3l.5-4H12V7.2c0-.5.3-.7.8-.7H15Z"/></svg></div>
-                <span className="k">Message</span><span className="v">Facebook</span>
-              </a>
-            </div>
-
-            <div className="finalcta">
-              <h2>Stop losing customers to a <span className="gt">ringing phone.</span></h2>
-              <p className="pi"><b>£299</b> setup · <b>£99</b>/month · live in 48 hours</p>
-              <Link className="btn btn-primary" to={SIGNUP}>Get started</Link>
-            </div>
-          </div>
-        </section>
-
-        <footer className="site">
-          <div className="wrap fin">
-            <div className="fbrand">
-              <a className="lock" href="#top" aria-label="NONSTOP AI">
-                <img className="m" src="/nonstop-mark.png" alt="" />
-                <img className="w" src="/nonstop-wordmark.png" alt="NONSTOP AI" />
-              </a>
-              <p>Built for businesses that never want to miss another customer. United Kingdom.</p>
-              <SocialLinks className="social-foot" showLabels />
-            </div>
-            <div className="fcols">
-              <div className="fcol">
-                <span className="h">Systems</span>
-                <Link to="/taxi">Taxi OS</Link>
-                <Link to="/food">FOOD OS</Link>
-                <a href="#services">All services</a>
-              </div>
-              <div className="fcol">
-                <span className="h">Company</span>
-                <a href="#industries">Industries</a>
-                <a href="#pricing">Pricing</a>
-                <a href="#contact">Contact</a>
-              </div>
-              <div className="fcol">
-                <span className="h">Get in touch</span>
-                <a href={`tel:${CONTACT.phone}`}>{CONTACT.phoneDisplay}</a>
-                <a href={`mailto:${CONTACT.email}`}>Email us</a>
-              </div>
-            </div>
-          </div>
-        </footer>
+      </footer>
     </div>
   )
 }

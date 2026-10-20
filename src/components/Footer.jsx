@@ -1,3 +1,5 @@
+import { openCookieSettings } from '../lib/consent.js'
+
 export default function Footer() {
   return (
     <footer className="border-t border-ink-line/70 mt-24">
@@ -7,7 +9,7 @@ export default function Footer() {
           <img src="/nonstop-wordmark.png" alt="NONSTOP AI" width="180" height="26" className="h-[11px] w-auto" />
           <span className="font-mono text-xs tracking-wide">· UK</span>
         </span>
-        <p>Built for businesses that never want to miss another customer.</p>
+        <p>Built for businesses that never want to miss another customer. <a href="/privacy/" className="underline">Privacy</a> · <button type="button" onClick={openCookieSettings} className="underline">Cookie settings</button></p>
       </div>
     </footer>
   )

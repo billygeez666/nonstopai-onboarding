@@ -7,6 +7,7 @@ import Signup from './pages/Signup.jsx'
 import Success from './pages/Success.jsx'
 import Cancel from './pages/Cancel.jsx'
 import NotFound from './pages/NotFound.jsx'
+import ConsentBanner from './components/ConsentBanner.jsx'
 import { VERTICALS } from './config/verticals/index.js'
 
 export default function App() {
@@ -19,6 +20,7 @@ export default function App() {
   }, [location.search])
 
   return (
+    <>
     <Routes>
       {/* Platform homepage - industry picker renders from the registry */}
       <Route path="/" element={<Home />} />
@@ -35,5 +37,7 @@ export default function App() {
       <Route path="/onboarding/cancel" element={<Cancel />} />
       <Route path="*" element={<NotFound />} />
     </Routes>
+    <ConsentBanner />
+    </>
   )
 }
