@@ -48,9 +48,21 @@ export default async (req) => {
   }
 
   // Honeypot: real people leave this empty. Silently accept so bots learn nothing.
+  // status "received" = accepted but NOT a saved lead, so the page must not fire a conversion.
   if (String(body['company-website'] || '').trim() !== '') {
-    return json(200, { ok: true })
+    return json(200, { ok: true, status: 'received' })
   }
+
+  // Attribution (Meta ad -> enquiry). Folded into p_source so no schema change is needed:
+  // it lands in wm_onboarding.source->>'landing'. fbclid is recorded as present/absent only.
+  const clean = (v, n) => String(v || '').replace(/[^\w.\-~%+ ]/g, '').slice(0, n)
+  const attr = []
+  for (const k of ['utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term']) {
+    const v = clean(body[k], 60)
+    if (v) attr.push(`${k}=${v}`)
+  }
+  if (String(body.fbclid || '').trim() !== '') attr.push('fbclid=yes')
+  const landing = String(body.source_page || '/ai-receptionist/').slice(0, 100)
 
   const payload = {
     p_name: String(body.name || '').slice(0, 120),
@@ -58,7 +70,7 @@ export default async (req) => {
     p_mobile: String(body.mobile || '').slice(0, 32),
     p_business: String(body.business_name || '').slice(0, 160),
     p_trade: String(body.trade || '').slice(0, 80),
-    p_source: String(body.source_page || '/ai-receptionist/').slice(0, 120),
+    p_source: attr.length ? `${landing} | ${attr.join(' ')}` : landing,
   }
 
   let res, out
@@ -88,7 +100,28 @@ export default async (req) => {
     return json(400, { ok: false, message: out.reason || 'Please check your details.' })
   }
 
-  // Accepted, deduped, suppressed or ignored as a test all look the same to the
-  // visitor, deliberately — we never tell a caller they are on a suppression list.
-  return json(200, { ok: true })
+  // Test / internal submissions are deliberately NOT saved by the RPC. Say so plainly
+  // (instead of showing a success screen) so nobody mistakes it for a stored enquiry.
+  if (out && out.test) {
+    return json(200, {
+      ok: false,
+      test: true,
+      message:
+        'Test submission recognised: nothing was saved and no alert was sent. To test properly, use a name and email that do not contain the word "test".',
+    })
+  }
+
+  // Duplicate / suppressed look like a normal thank-you to the visitor (we never tell
+  // anyone they are on a suppression list) but are NOT new leads: no conversion event.
+  if (out && (out.duplicate || out.suppressed)) {
+    return json(200, { ok: true, status: 'received' })
+  }
+
+  // Only a genuinely stored lead returns status "saved" plus its reference. The page
+  // fires the Meta Lead event on this alone, using the ref as the event id.
+  if (out && out.ok === true && out.ref) {
+    return json(200, { ok: true, status: 'saved', ref: out.ref })
+  }
+  console.error('demo-request: unexpected RPC result', out)
+  return json(502, { ok: false, message: 'Could not save that. Please ring 07460 080973.' })
 }
