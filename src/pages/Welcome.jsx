@@ -96,8 +96,13 @@ export default function Welcome() {
     meta.name = 'robots'
     meta.content = 'noindex,nofollow'
     document.head.appendChild(meta)
+    // Never leak the token URL to other sites via the Referer header.
+    const ref = document.createElement('meta')
+    ref.name = 'referrer'
+    ref.content = 'no-referrer'
+    document.head.appendChild(ref)
     document.title = 'NONSTOP AI onboarding'
-    return () => meta.remove()
+    return () => { meta.remove(); ref.remove() }
   }, [])
 
   useEffect(() => {

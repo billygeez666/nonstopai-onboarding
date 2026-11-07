@@ -32,8 +32,12 @@ function store(v) {
 
 let loaded = false
 
+// Pages whose URL contains a secret (single-use onboarding token) must never reach third-party trackers.
+const isPrivatePath = () =>
+  typeof window !== 'undefined' && /^\/welcome(\/|$)/.test(window.location.pathname)
+
 export function loadPixel() {
-  if (loaded || typeof window === 'undefined') return
+  if (loaded || typeof window === 'undefined' || isPrivatePath()) return
   loaded = true
   /* eslint-disable */
   !function(f,b,e,v,n,t,s){if(f.fbq)return;n=f.fbq=function(){n.callMethod?
