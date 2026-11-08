@@ -6,6 +6,7 @@ import VerticalLanding from './pages/VerticalLanding.jsx'
 import Signup from './pages/Signup.jsx'
 import Success from './pages/Success.jsx'
 import Cancel from './pages/Cancel.jsx'
+import Welcome from './pages/Welcome.jsx'
 import NotFound from './pages/NotFound.jsx'
 import ConsentBanner from './components/ConsentBanner.jsx'
 import { VERTICALS } from './config/verticals/index.js'
@@ -33,6 +34,8 @@ export default function App() {
 
       <Route path="/signup" element={<Signup />} />
       <Route path="/signup/:vertical" element={<Signup />} />
+      {/* Payment-free onboarding for the £99/month offer (single-use emailed link) */}
+      <Route path="/welcome/:token" element={<Welcome />} />
       <Route path="/onboarding/success" element={<Success />} />
       <Route path="/onboarding/cancel" element={<Cancel />} />
       <Route path="*" element={<NotFound />} />
