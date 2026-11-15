@@ -75,14 +75,24 @@ export async function listGoogleCalendarEvents({ accessToken, calendarId = 'prim
   url.searchParams.set('timeMin', timeMin);
   url.searchParams.set('timeMax', timeMax);
   url.searchParams.set('singleEvents', 'true');
+  url.searchParams.set('showDeleted', 'true');
+  url.searchParams.set('fields', 'nextPageToken,items(id,etag,updated,status,start(dateTime,date),end(dateTime,date))');
   url.searchParams.set('maxResults', '250');
   const results = [];
+  const seenPageTokens = new Set();
   let pageToken;
   do {
-    if (pageToken) url.searchParams.set('pageToken', pageToken);
+    if (pageToken) {
+      if (seenPageTokens.has(pageToken)) throw new Error('Google Calendar pagination repeated a token');
+      seenPageTokens.add(pageToken);
+      url.searchParams.set('pageToken', pageToken);
+    }
     const response = await fetchImpl(url.toString(), { headers: { Authorization: `Bearer ${accessToken}` } });
     if (!response.ok) throw new Error(`Google Calendar API failed: HTTP ${response.status}`);
     const data = await response.json();
+    if (!data || (data.items !== undefined && !Array.isArray(data.items))) {
+      throw new Error('Invalid Google Calendar response');
+    }
     results.push(...(data.items ?? []));
     pageToken = data.nextPageToken;
   } while (pageToken);

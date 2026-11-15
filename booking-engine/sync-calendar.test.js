@@ -40,3 +40,50 @@ test('refuses other tenants and missing credentials', async () => {
     supabaseServiceRoleKey: 'x', calendarId: 'some-other-calendar',
   }), /locked/);
 });
+
+test('reconciles verified timestamp-less cancellations and ignores untracked tombstones', async () => {
+  const writes = [];
+  const fetchImpl = async (url, options) => {
+    const target = new URL(url);
+    if (target.hostname === 'www.googleapis.com') {
+      assert.equal(target.searchParams.get('showDeleted'), 'true');
+      assert.equal(target.searchParams.get('singleEvents'), 'true');
+      return { ok: true, json: async () => ({ items: [
+        { id: 'tracked', status: 'cancelled' },
+        { id: 'unknown', status: 'cancelled' },
+      ] }) };
+    }
+    if (target.pathname.endsWith('/br_appointments')) {
+      assert.equal(target.searchParams.get('br_tenants.slug'), 'eq.nonstopai-internal-test');
+      const rows = target.searchParams.get('external_event_id') === 'eq.tracked'
+        ? [{ start_at: '2026-12-01T10:00:00Z', end_at: '2026-12-01T10:30:00Z' }]
+        : [];
+      return { ok: true, json: async () => rows };
+    }
+    writes.push(JSON.parse(options.body));
+    return { ok: true, json: async () => ({ mode: 'dry-run' }) };
+  };
+
+  await syncCalendarDryRun({
+    googleAccessToken: 'test', supabaseUrl: 'https://example.supabase.co',
+    supabaseServiceRoleKey: 'test', fetchImpl,
+    timeMin: '2026-11-30T00:00:00Z', timeMax: '2026-12-02T00:00:00Z',
+  });
+  assert.deepEqual(writes, [{
+    p_event_id: 'tracked', p_version: 'cancelled',
+    p_start: '2026-12-01T10:00:00.000Z', p_end: '2026-12-01T10:30:00.000Z',
+    p_status: 'cancelled',
+  }]);
+});
+
+test('Google failure surfaces only the status and makes no Supabase calls', async () => {
+  const fetchImpl = async (url) => {
+    assert.equal(new URL(url).hostname, 'www.googleapis.com');
+    return { ok: false, status: 503, json: async () => assert.fail('Unexpected error body read') };
+  };
+  await assert.rejects(() => syncCalendarDryRun({
+    googleAccessToken: 'test', supabaseUrl: 'https://example.supabase.co',
+    supabaseServiceRoleKey: 'test', fetchImpl,
+    timeMin: '2026-11-30T00:00:00Z', timeMax: '2026-12-02T00:00:00Z',
+  }), { message: 'Google Calendar API failed: HTTP 503' });
+});

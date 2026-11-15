@@ -23,10 +23,41 @@ export async function syncCalendarDryRun({
   const events = await listGoogleCalendarEvents({
     accessToken: googleAccessToken, calendarId, timeMin, timeMax, fetchImpl,
   });
+  const headers = {
+    apikey: supabaseServiceRoleKey,
+    Authorization: `Bearer ${supabaseServiceRoleKey}`,
+    'Content-Type': 'application/json',
+  };
   const results = [];
-  for (const event of events) {
-    // Google returns cancelled event tombstones with incomplete time data.
-    // Do not infer a cancellation or delete appointments from missing events.
+  for (let event of events) {
+    // A verified cancellation may contain only an event ID. Resolve its last
+    // known times from the isolated pilot, and ignore unknown cancellations.
+    if (event.status === 'cancelled' && (!event.start?.dateTime || !event.end?.dateTime)) {
+      if (!event.id) throw new Error('Cancellation event identity missing');
+      const lookup = new URL('/rest/v1/br_appointments', origin);
+      lookup.search = new URLSearchParams({
+        select: 'start_at,end_at,br_tenants!inner(slug)',
+        calendar_id: `eq.${calendarId}`,
+        external_event_id: `eq.${event.id}`,
+        'br_tenants.slug': `eq.${tenantId}`,
+        limit: '2',
+      }).toString();
+      const response = await fetchImpl(lookup.toString(), { headers, redirect: 'error' });
+      if (!response.ok) throw new Error(`Dry-run appointment lookup failed: HTTP ${response.status}`);
+      const appointments = await response.json();
+      if (!Array.isArray(appointments) || appointments.length > 1) throw new Error('Invalid dry-run appointment lookup');
+      if (!appointments.length) {
+        results.push({ eventId: event.id, skipped: 'untracked-cancellation' });
+        continue;
+      }
+      const [previous] = appointments;
+      event = {
+        ...event,
+        etag: event.etag ?? event.updated ?? 'cancelled',
+        start: { dateTime: previous.start_at },
+        end: { dateTime: previous.end_at },
+      };
+    }
     if (!event.start?.dateTime || !event.end?.dateTime) {
       results.push({ eventId: event.id, skipped: 'no-timed-start-end' });
       continue;
@@ -35,11 +66,8 @@ export async function syncCalendarDryRun({
     const url = new URL('/rest/v1/rpc/br_sync_test_event', origin);
     const response = await fetchImpl(url.toString(), {
       method: 'POST',
-      headers: {
-        apikey: supabaseServiceRoleKey,
-        Authorization: `Bearer ${supabaseServiceRoleKey}`,
-        'Content-Type': 'application/json',
-      },
+      headers,
+      redirect: 'error',
       body: JSON.stringify({
         p_event_id: appointment.eventId,
         p_version: appointment.version,
