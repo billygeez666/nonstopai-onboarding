@@ -1,4 +1,4 @@
-import { createHmac } from 'node:crypto'
+import { createHmac, timingSafeEqual } from 'node:crypto'
 import { createDomainChallenge, createNetlifyCustomerPublisher } from './websiteMachinePublishing.js'
 import { createStripeWebsiteMachineWebhook, createWebsiteMachineCheckoutApi } from './websiteMachinePayments.js'
 import { createWebsiteMachineDeliveryEmail } from './websiteMachineEmail.js'
@@ -36,6 +36,107 @@ function stagingCommerceReady(config) {
 function signature(message, secret) {
   if (typeof secret !== 'string' || secret.length < 32) throw new Error('Website Machine payment storage is not configured.')
   return createHmac('sha256', secret).update(message).digest('hex')
+}
+
+function selectedEnv(env, primary, fallback = null) {
+  if (env[primary]) return { name: primary, value: env[primary] }
+  if (fallback && env[fallback]) return { name: fallback, value: env[fallback] }
+  return { name: fallback ? `${primary} or ${fallback}` : primary, value: '' }
+}
+
+function inspectStagingEnvironment(env) {
+  const missing = []
+  const invalid = []
+  const requireValue = (name, value) => { if (!value) missing.push(name); return value }
+  const requireMatch = (name, value, predicate) => {
+    if (!value) missing.push(name)
+    else if (!predicate(value)) invalid.push(name)
+    return value
+  }
+  requireMatch('WM_RUNTIME_ENV', env.WM_RUNTIME_ENV, (value) => value === 'staging')
+  requireMatch('WM_STAGING_PUBLIC_URL', env.WM_STAGING_PUBLIC_URL, (value) => value === 'https://bendarus.netlify.app')
+  const supabaseUrl = selectedEnv(env, 'WM_STAGING_SUPABASE_URL', 'WM_SUPABASE_URL')
+  requireMatch(supabaseUrl.name, supabaseUrl.value, (value) => value === 'https://lqywsbqctoydtdqvjzzw.supabase.co')
+  const publishableKey = selectedEnv(env, 'WM_STAGING_SUPABASE_PUBLISHABLE_KEY', 'WM_SUPABASE_PUBLISHABLE_KEY')
+  requireValue(publishableKey.name, publishableKey.value)
+  const stripeSecret = selectedEnv(env, 'WM_STAGING_STRIPE_SECRET_KEY', 'STRIPE_SECRET_KEY')
+  requireMatch(stripeSecret.name, stripeSecret.value, (value) => value.startsWith('sk_test_'))
+  const webhookSecret = selectedEnv(env, 'WM_STAGING_STRIPE_WEBHOOK_SECRET', 'STRIPE_WEBHOOK_SECRET')
+  requireMatch(webhookSecret.name, webhookSecret.value, (value) => value.startsWith('whsec_'))
+  const stripePrice = selectedEnv(env, 'WM_STAGING_STRIPE_PRICE_ID', 'STRIPE_PRICE_ID')
+  requireMatch(stripePrice.name, stripePrice.value, (value) => value.startsWith('price_'))
+  requireMatch('WM_STAGING_PAYMENT_RPC_SECRET', env.WM_STAGING_PAYMENT_RPC_SECRET, (value) => value.length >= 32)
+  requireValue('WM_STAGING_NETLIFY_CUSTOMER_TOKEN', env.WM_STAGING_NETLIFY_CUSTOMER_TOKEN)
+  requireMatch('WM_STAGING_NETLIFY_ACCOUNT_SLUG', env.WM_STAGING_NETLIFY_ACCOUNT_SLUG, (value) => value === 'website-machine')
+  requireValue('WM_STAGING_EMAIL_API_KEY', env.WM_STAGING_EMAIL_API_KEY)
+  requireMatch('WM_STAGING_DELIVERY_FROM_EMAIL', env.WM_STAGING_DELIVERY_FROM_EMAIL, (value) => /^[^\s@<>"']+@[^\s@<>"']+\.[^\s@<>"']{2,}$/.test(value))
+  return { missing, invalid, stripeSecret, stripePrice, rpcSecret: env.WM_STAGING_PAYMENT_RPC_SECRET, publishableKey, supabaseUrl }
+}
+
+/**
+ * A temporary, read-only staging diagnostic. Callers must prove possession of
+ * the RPC secret with a short-lived HMAC challenge. The response contains only
+ * variable names and booleans; it never returns environment values.
+ */
+export function createWebsiteMachineReadinessHandler({ env = process.env, fetchImpl = fetch, now = () => Date.now() } = {}) {
+  return async (event) => {
+    if (event.httpMethod !== 'POST') return { statusCode: 405, headers: { allow: 'POST', 'cache-control': 'no-store' }, body: 'Method not allowed.' }
+    if (Buffer.byteLength(event.body || '') > 1000) return { statusCode: 413, body: 'Request too large.' }
+    const secret = env.WM_STAGING_PAYMENT_RPC_SECRET
+    if (!secret || env.WM_RUNTIME_ENV !== 'staging') return { statusCode: 503, body: 'Staging diagnostics are unavailable.' }
+    const headers = event.headers || {}
+    const timestamp = headers['x-wm-diagnostic-timestamp'] || headers['X-Wm-Diagnostic-Timestamp'] || ''
+    const nonce = headers['x-wm-diagnostic-nonce'] || headers['X-Wm-Diagnostic-Nonce'] || ''
+    const suppliedHex = headers['x-wm-diagnostic-signature'] || headers['X-Wm-Diagnostic-Signature'] || ''
+    const seconds = Number(timestamp)
+    if (!/^\d{10}$/.test(timestamp) || !Number.isSafeInteger(seconds) || Math.abs(Math.floor(now() / 1000) - seconds) > 60 || !/^[a-f0-9]{32,128}$/i.test(nonce) || !/^[a-f0-9]{64}$/i.test(suppliedHex)) {
+      return { statusCode: 401, body: 'Invalid diagnostic authorization.' }
+    }
+    const expected = createHmac('sha256', secret).update(`wm-staging-readiness-v1\n${timestamp}\n${nonce}`).digest()
+    const supplied = Buffer.from(suppliedHex, 'hex')
+    if (supplied.length !== expected.length || !timingSafeEqual(supplied, expected)) return { statusCode: 401, body: 'Invalid diagnostic authorization.' }
+
+    const inspected = inspectStagingEnvironment(env)
+    const result = {
+      missing: inspected.missing,
+      invalid: inspected.invalid,
+      checks: { paymentRpcSecretMatchesSupabase: null, stripePriceIsVerifiedOneOff: null },
+    }
+    if (inspected.rpcSecret.length >= 32 && inspected.publishableKey.value && inspected.supabaseUrl.value === 'https://lqywsbqctoydtdqvjzzw.supabase.co') {
+      try {
+        const orderId = '00000000-0000-0000-0000-000000000000'
+        const response = await fetchImpl(`${inspected.supabaseUrl.value}/rest/v1/rpc/wm_get_payment_order`, {
+          method: 'POST',
+          headers: { apikey: inspected.publishableKey.value, 'content-type': 'application/json' },
+          body: JSON.stringify({ p_order_id: orderId, p_mode: 'test', p_signature: signature(`test\nget_order:${orderId}`, inspected.rpcSecret) }),
+        })
+        if (response.status === 401 || response.status === 403) {
+          result.checks.paymentRpcSecretMatchesSupabase = false
+          if (!result.invalid.includes('WM_STAGING_PAYMENT_RPC_SECRET')) result.invalid.push('WM_STAGING_PAYMENT_RPC_SECRET')
+        } else if (response.ok) result.checks.paymentRpcSecretMatchesSupabase = true
+      } catch {}
+    }
+    if (inspected.stripeSecret.value.startsWith('sk_test_') && inspected.stripePrice.value.startsWith('price_')) {
+      try {
+        const response = await fetchImpl(`https://api.stripe.com/v1/prices/${encodeURIComponent(inspected.stripePrice.value)}?expand%5B%5D=product`, {
+          headers: { authorization: `Bearer ${inspected.stripeSecret.value}` },
+        })
+        if (response.status === 401 || response.status === 403) {
+          if (!result.invalid.includes(inspected.stripeSecret.name)) result.invalid.push(inspected.stripeSecret.name)
+        } else if (response.status === 404) {
+          if (!result.invalid.includes(inspected.stripePrice.name)) result.invalid.push(inspected.stripePrice.name)
+        } else if (response.ok) {
+          const price = await response.json()
+          const isWebsiteMachine = /website/i.test(price?.product?.name || '') || price?.product?.metadata?.product === 'website_machine'
+          result.checks.stripePriceIsVerifiedOneOff = price?.id === inspected.stripePrice.value && price?.livemode === false && price?.active === true &&
+            price?.currency === 'gbp' && price?.unit_amount === 9900 && !price?.recurring && price?.product?.active === true &&
+            isWebsiteMachine && !/receptionist/i.test(price?.product?.name || '')
+          if (!result.checks.stripePriceIsVerifiedOneOff && !result.invalid.includes(inspected.stripePrice.name)) result.invalid.push(inspected.stripePrice.name)
+        }
+      } catch {}
+    }
+    return { statusCode: 200, headers: { 'content-type': 'application/json', 'cache-control': 'no-store' }, body: JSON.stringify(result) }
+  }
 }
 
 function createRpc({ baseUrl, publishableKey, fetchImpl }) {

@@ -1,6 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { createWebsiteMachineCheckoutHandler, createWebsiteMachineCustomerSiteHandler, createWebsiteMachineStripeWebhookHandler } from './websiteMachineCommerceServer.js'
+import { createHmac } from 'node:crypto'
+import { createWebsiteMachineCheckoutHandler, createWebsiteMachineCustomerSiteHandler, createWebsiteMachineReadinessHandler, createWebsiteMachineStripeWebhookHandler } from './websiteMachineCommerceServer.js'
 import { getWebsiteMachineConfig } from './websiteMachineServer.js'
 
 const supabase = 'https://lqywsbqctoydtdqvjzzw.supabase.co'
@@ -63,6 +64,46 @@ test('staging accepts the configured Stripe secret names while still requiring a
 
   const unsafe = createWebsiteMachineStripeWebhookHandler({ env: { ...base, STRIPE_SECRET_KEY: 'sk_live_must_not_be_used' } })
   assert.equal((await unsafe({ httpMethod: 'POST', body: '{}' })).statusCode, 503)
+})
+
+test('staging readiness diagnostic verifies the RPC secret and reports only missing variable names', async () => {
+  const secret = 'synthetic-test-payment-rpc-secret-0123456789'
+  const now = Date.now()
+  const timestamp = String(Math.floor(now / 1000))
+  const nonce = 'a'.repeat(64)
+  const authMessage = `wm-staging-readiness-v1\n${timestamp}\n${nonce}`
+  const authSignature = createHmac('sha256', secret).update(authMessage).digest('hex')
+  const env = {
+    WM_RUNTIME_ENV: 'staging', WM_STAGING_PUBLIC_URL: 'https://bendarus.netlify.app',
+    WM_STAGING_SUPABASE_URL: supabase, WM_STAGING_SUPABASE_PUBLISHABLE_KEY: 'publishable-test-key',
+    STRIPE_SECRET_KEY: 'sk_test_synthetic', STRIPE_WEBHOOK_SECRET: 'whsec_synthetic', STRIPE_PRICE_ID: 'price_test_fixture_website_machine_99',
+    WM_STAGING_PAYMENT_RPC_SECRET: secret, WM_STAGING_NETLIFY_CUSTOMER_TOKEN: 'synthetic-netlify-token',
+    WM_STAGING_NETLIFY_ACCOUNT_SLUG: 'website-machine', WM_STAGING_EMAIL_API_KEY: 'synthetic-email-key',
+    WM_STAGING_DELIVERY_FROM_EMAIL: 'websites@example.test',
+  }
+  const mockFetch = async (url) => url.includes('/rpc/wm_get_payment_order')
+    ? { ok: true, status: 200 }
+    : { ok: true, status: 200, json: async () => ({ id: env.STRIPE_PRICE_ID, livemode: false, active: true, currency: 'gbp', unit_amount: 9900, recurring: null, product: { active: true, name: 'Website Machine Website', metadata: {} } }) }
+  const handler = createWebsiteMachineReadinessHandler({
+    env,
+    now: () => now,
+    fetchImpl: mockFetch,
+  })
+  const event = { httpMethod: 'POST', headers: { 'x-wm-diagnostic-timestamp': timestamp, 'x-wm-diagnostic-nonce': nonce, 'x-wm-diagnostic-signature': authSignature }, body: '' }
+  const result = await handler(event)
+  const body = JSON.parse(result.body)
+  assert.equal(result.statusCode, 200)
+  assert.deepEqual(body.missing, [])
+  assert.deepEqual(body.invalid, [])
+  assert.equal(body.checks.paymentRpcSecretMatchesSupabase, true)
+  assert.equal(body.checks.stripePriceIsVerifiedOneOff, true)
+
+  const incomplete = createWebsiteMachineReadinessHandler({ env: { ...env, WM_STAGING_EMAIL_API_KEY: '', WM_STAGING_NETLIFY_ACCOUNT_SLUG: 'wrong-team' }, now: () => now, fetchImpl: mockFetch })
+  const incompleteResult = await incomplete(event)
+  const incompleteBody = JSON.parse(incompleteResult.body)
+  assert.deepEqual(incompleteBody.missing, ['WM_STAGING_EMAIL_API_KEY'])
+  assert.deepEqual(incompleteBody.invalid, ['WM_STAGING_NETLIFY_ACCOUNT_SLUG'])
+  assert.equal((await handler({ ...event, headers: { ...event.headers, 'x-wm-diagnostic-signature': '0'.repeat(64) } })).statusCode, 401)
 })
 
 test('customer site status requires the owner session and returns no row for another project owner', async () => {
