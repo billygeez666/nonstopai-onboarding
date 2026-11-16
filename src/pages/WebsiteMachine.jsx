@@ -1,10 +1,13 @@
 import { useEffect, useRef, useState } from 'react'
 import { generateWebsiteContent, renderStaticWebsite, sanitizeEditableText, validateBusinessInput } from '../lib/websiteMachine.js'
 import { buildResearchBrief } from '../lib/websiteMachineResearch.js'
+import { fetchWebsiteMachineRequest, getWebsiteMachineActionState } from '../lib/websiteMachineUiState.js'
 import './WebsiteMachine.css'
 import './WebsiteMachineEdits.css'
 import './WebsiteMachineExport.css'
 import './WebsiteMachineCommerce.css'
+
+const request = (url, options = {}) => fetchWebsiteMachineRequest(fetch, url, options)
 
 const example = {
   businessName: 'Northstar Motor Works',
@@ -36,7 +39,8 @@ export default function WebsiteMachine() {
   const [domainRecord, setDomainRecord] = useState(null)
   const [customerSite, setCustomerSite] = useState(null)
   const [serviceState, setServiceState] = useState('')
-  const [busy, setBusy] = useState(false)
+  const [busyAction, setBusyAction] = useState('')
+  const busy = Boolean(busyAction)
   const [session, setSession] = useState(() => sessionStorage.getItem('wm_access_token') || '')
   const [account, setAccount] = useState(() => sessionStorage.getItem('wm_account_email') || '')
   const [email, setEmail] = useState('')
@@ -46,6 +50,7 @@ export default function WebsiteMachine() {
   const returnProjectId = new URLSearchParams(window.location.search).get('project_id')
   const createKey = useRef('')
   const previewFrame = useRef(null)
+  const actionState = getWebsiteMachineActionState({ session, busyAction, project })
 
   useEffect(() => {
     if (paymentNotice !== 'processing' || !returnProjectId || !session) return undefined
@@ -55,7 +60,7 @@ export default function WebsiteMachine() {
     const checkDelivery = async () => {
       attempt += 1
       try {
-        const response = await fetch(`/.netlify/functions/website-machine-customer-site?project_id=${encodeURIComponent(returnProjectId)}`, {
+        const response = await request(`/.netlify/functions/website-machine-customer-site?project_id=${encodeURIComponent(returnProjectId)}`, {
           headers: { authorization: `Bearer ${session}` },
         })
         if (response.ok) {
@@ -131,10 +136,10 @@ export default function WebsiteMachine() {
 
   async function signIn(event) {
     event.preventDefault()
-    setBusy(true)
+    setBusyAction('Signing in')
     setAuthError('')
     try {
-      const response = await fetch('/.netlify/functions/website-machine-auth', {
+      const response = await request('/.netlify/functions/website-machine-auth', {
         method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email, password }),
       })
       const result = await response.json()
@@ -147,7 +152,7 @@ export default function WebsiteMachine() {
     } catch (error) {
       setAuthError(error.message)
     } finally {
-      setBusy(false)
+      setBusyAction('')
     }
   }
 
@@ -161,9 +166,13 @@ export default function WebsiteMachine() {
   }
 
   async function projectAction(action) {
-    setBusy(true)
+    const actionLabels = { create: 'Saving project', save: 'Saving edits', preview: 'Creating secure preview', delivery: 'Preparing delivery file' }
+    setBusyAction(actionLabels[action] || 'Working')
     setServiceState('')
     try {
+      const checked = validateBusinessInput(input)
+      setValidation(checked.errors)
+      if (!checked.ok) throw new Error('Fix the business information before saving the project.')
       const research = source.label || source.url || source.findings
         ? buildResearchBrief([{ ...source, verifiedAt: new Date().toISOString() }])
         : { ok: true, verifiedFindings: [] }
@@ -171,9 +180,9 @@ export default function WebsiteMachine() {
       let current = project
       if (!current) {
         if (!createKey.current) createKey.current = crypto.randomUUID()
-        const created = await fetch('/.netlify/functions/website-machine-project', {
+        const created = await request('/.netlify/functions/website-machine-project', {
           method: 'POST', headers: { 'content-type': 'application/json', 'idempotency-key': createKey.current, authorization: `Bearer ${session}` },
-          body: JSON.stringify({ business: validateBusinessInput(input).value, content, research: research.verifiedFindings }),
+          body: JSON.stringify({ business: checked.value, content, research: research.verifiedFindings }),
         })
         const createdBody = await created.json()
         if (!created.ok) throw new Error(createdBody.error || 'Could not save the project.')
@@ -181,14 +190,14 @@ export default function WebsiteMachine() {
         createKey.current = ''
         setProject(current)
       } else if (action === 'save') {
-        const saved = await fetch(`/.netlify/functions/website-machine-project?id=${encodeURIComponent(current.id)}`, {
-          method: 'PUT', headers: { 'content-type': 'application/json', authorization: `Bearer ${session}` }, body: JSON.stringify({ content, business: validateBusinessInput(input).value, research: research.verifiedFindings }),
+        const saved = await request(`/.netlify/functions/website-machine-project?id=${encodeURIComponent(current.id)}`, {
+          method: 'PUT', headers: { 'content-type': 'application/json', authorization: `Bearer ${session}` }, body: JSON.stringify({ content, business: checked.value, research: research.verifiedFindings }),
         })
         if (!saved.ok) throw new Error((await saved.json()).error || 'Could not save edits.')
         setPublishedPreviewUrl('')
       }
       if (action === 'preview') {
-        const response = await fetch('/.netlify/functions/website-machine-preview', {
+        const response = await request('/.netlify/functions/website-machine-preview', {
           method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${session}` }, body: JSON.stringify({ id: current.id }),
         })
         const result = await response.json()
@@ -196,7 +205,7 @@ export default function WebsiteMachine() {
         setPublishedPreviewUrl(result.previewUrl)
         setServiceState(`Secure preview ready. This link expires ${new Date(result.expiresAt).toLocaleString()}.`)
       } else if (action === 'delivery') {
-        const response = await fetch(`/.netlify/functions/website-machine-delivery?id=${encodeURIComponent(current.id)}`, { headers: { authorization: `Bearer ${session}` } })
+        const response = await request(`/.netlify/functions/website-machine-delivery?id=${encodeURIComponent(current.id)}`, { headers: { authorization: `Bearer ${session}` } })
         if (!response.ok) throw new Error((await response.json()).error || 'Could not prepare delivery.')
         const blob = await response.blob()
         const url = URL.createObjectURL(blob)
@@ -211,18 +220,18 @@ export default function WebsiteMachine() {
     } catch (error) {
       setServiceState(error.message)
     } finally {
-      setBusy(false)
+      setBusyAction('')
     }
   }
 
   async function requestDomainChallenge(event) {
     event.preventDefault()
-    setBusy(true)
+    setBusyAction('Creating DNS ownership check')
     setServiceState('')
     setDomainRecord(null)
     try {
       if (!session) throw new Error('Sign in before verifying a custom domain.')
-      const response = await fetch('/.netlify/functions/website-machine-domain-challenge', {
+      const response = await request('/.netlify/functions/website-machine-domain-challenge', {
         method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${session}` },
         body: JSON.stringify({ domain }),
       })
@@ -235,12 +244,12 @@ export default function WebsiteMachine() {
       setDomainChallenge(null)
       setServiceState(error.message)
     } finally {
-      setBusy(false)
+      setBusyAction('')
     }
   }
 
   async function beginCheckout() {
-    setBusy(true)
+    setBusyAction('Preparing secure checkout')
     setServiceState('')
     try {
       if (!session) throw new Error('Sign in before continuing to secure checkout.')
@@ -254,11 +263,11 @@ export default function WebsiteMachine() {
         : { ok: true, verifiedFindings: [] }
       if (!research.ok) throw new Error(research.error)
       const action = project
-        ? await fetch(`/.netlify/functions/website-machine-project?id=${encodeURIComponent(project.id)}`, {
+        ? await request(`/.netlify/functions/website-machine-project?id=${encodeURIComponent(project.id)}`, {
           method: 'PUT', headers: { 'content-type': 'application/json', authorization: `Bearer ${session}` },
           body: JSON.stringify({ content, business: checked.value, research: research.verifiedFindings }),
         })
-        : await fetch('/.netlify/functions/website-machine-project', {
+        : await request('/.netlify/functions/website-machine-project', {
           method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${session}`, 'idempotency-key': crypto.randomUUID() },
           body: JSON.stringify({ business: checked.value, content, research: research.verifiedFindings }),
         })
@@ -266,7 +275,7 @@ export default function WebsiteMachine() {
       if (!action.ok) throw new Error(saved.error || 'Could not save the project before checkout.')
       const projectId = project?.id || saved.id
       setProject({ id: projectId })
-      const response = await fetch('/.netlify/functions/website-machine-checkout', {
+      const response = await request('/.netlify/functions/website-machine-checkout', {
         method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${session}`, 'idempotency-key': crypto.randomUUID() },
         body: JSON.stringify({ projectId, ...(domain.trim() ? { domain: domainChallenge.domain, domainChallenge } : {}) }),
       })
@@ -275,7 +284,7 @@ export default function WebsiteMachine() {
       window.location.assign(result.checkoutUrl)
     } catch (error) {
       setServiceState(error.message)
-      setBusy(false)
+      setBusyAction('')
     }
   }
 
@@ -291,7 +300,7 @@ export default function WebsiteMachine() {
       <section className="wm-auth-panel" aria-label="Website Machine account">
         {session
           ? <><span>Signed in as <b>{account}</b></span><button type="button" onClick={signOut}>Sign out</button></>
-          : <form onSubmit={signIn}><strong>Sign in to save projects</strong><input aria-label="Account email" type="email" autoComplete="username" required maxLength={254} placeholder="Your NONSTOP AI account email" value={email} onChange={(event) => setEmail(event.target.value)} /><input aria-label="Account password" type="password" autoComplete="current-password" required maxLength={1024} placeholder="Password" value={password} onChange={(event) => setPassword(event.target.value)} /><button type="submit" disabled={busy}>{busy ? 'Signing in…' : 'Sign in'}</button>{authError && <small role="alert">{authError}</small>}</form>}
+          : <form onSubmit={signIn}><strong>Sign in to save projects</strong><input aria-label="Account email" type="email" autoComplete="username" required maxLength={254} placeholder="Your NONSTOP AI account email" value={email} onChange={(event) => setEmail(event.target.value)} /><input aria-label="Account password" type="password" autoComplete="current-password" required maxLength={1024} placeholder="Password" value={password} onChange={(event) => setPassword(event.target.value)} /><button type="submit" disabled={busy}>{busyAction === 'Signing in' ? 'Signing in…' : 'Sign in'}</button>{authError && <small role="alert">{authError}</small>}</form>}
       </section>
 
       <div className="wm-workspace">
@@ -358,11 +367,13 @@ export default function WebsiteMachine() {
           </div>
           <div className="wm-preview-actions"><p className="wm-preview-hint"><span>↗</span> Click generated copy in the preview to edit it. Changes are local to this draft.</p><button type="button" className="wm-export" onClick={downloadSite}>Download draft HTML ↓</button></div>
           <div className="wm-project-actions">
-            <button type="button" onClick={() => projectAction('create')} disabled={busy || Boolean(project) || !session}>{project ? 'Project saved in this session' : 'Save project'}</button>
+            <button type="button" onClick={() => projectAction('create')} disabled={actionState.saveProjectDisabled}>{project ? 'Project saved in this session' : 'Save project'}</button>
             <button type="button" onClick={() => projectAction('save')} disabled={busy || !project || !session}>Save edits</button>
             <button type="button" onClick={() => projectAction('preview')} disabled={busy || !project || !session}>Publish staging preview</button>
             <button type="button" onClick={() => projectAction('delivery')} disabled={busy || !project || !session}>Prepare delivery file</button>
           </div>
+          {actionState.saveProjectReason && !busy && <p className="wm-action-reason" role="status">{actionState.saveProjectReason}</p>}
+          {busyAction && <p className="wm-action-reason" role="status">{busyAction}…</p>}
           {serviceState && <p className="wm-service-state" role="status">{serviceState}</p>}
           {paymentNotice === 'processing' && <p className="wm-service-state" role="status">Payment is being confirmed. Website delivery starts only after the signed Stripe confirmation is verified.</p>}
           {customerSite?.status === 'delivered' && <p className="wm-service-state" role="status">Your website is live. <a href={customerSite.site_url} target="_blank" rel="noreferrer">Open customer website ↗</a></p>}
@@ -375,8 +386,8 @@ export default function WebsiteMachine() {
             <label className="wm-field"><span>Custom domain <b>OPTIONAL</b></span><input value={domain} maxLength={253} placeholder="www.yourbusiness.co.uk" onChange={(event) => { setDomain(event.target.value); setDomainChallenge(null); setDomainRecord(null) }} /></label>
             {domain.trim() && <button type="button" onClick={requestDomainChallenge} disabled={busy || !session}>Create DNS ownership check</button>}
             {domainRecord && <div className="wm-domain-record"><b>TXT record · expires {new Date(domainRecord.expiresAt).toLocaleString()}</b><code>{domainRecord.name}</code><code>{domainRecord.value}</code></div>}
-            <button type="button" className="wm-checkout-button" onClick={beginCheckout} disabled={busy || !session}>{busy ? 'Preparing secure checkout…' : 'Continue to secure checkout'}</button>
-            {!session && <small>Sign in to save this project and continue.</small>}
+            <button type="button" className="wm-checkout-button" onClick={beginCheckout} disabled={actionState.checkoutDisabled}>{busyAction === 'Preparing secure checkout' ? 'Preparing secure checkout…' : 'Continue to secure checkout'}</button>
+            {actionState.checkoutReason && !busy && <small className="wm-action-reason" role="status">{actionState.checkoutReason}</small>}
             <small>Payments are confirmed by a signed Stripe webhook. Returning from checkout alone never starts delivery.</small>
           </section>
         </section>
