@@ -39,6 +39,7 @@ export function createWebsiteMachineCheckoutApi({
   env = process.env,
   fetchImpl = fetch,
   verifyUser,
+  isAuthorizedTester = async () => false,
   loadOwnedProject,
   createOrder = async () => ({ id: randomUUID() }),
   saveCheckoutSession = async () => {},
@@ -56,6 +57,13 @@ export function createWebsiteMachineCheckoutApi({
       const token = (event.headers?.authorization || event.headers?.Authorization || '').match(/^Bearer\s+(.+)$/i)?.[1]
       const user = await verifyUser?.(token)
       if (!user?.id) return { statusCode: 401, body: JSON.stringify({ error: 'A valid Website Machine session is required.' }) }
+      let authorizedTester = false
+      try {
+        authorizedTester = await isAuthorizedTester({ token, user }) === true
+      } catch {
+        return { statusCode: 503, body: JSON.stringify({ error: 'Staging checkout authorization could not be verified.' }) }
+      }
+      if (!authorizedTester) return { statusCode: 403, body: JSON.stringify({ error: 'Staging checkout is restricted to approved testers.' }) }
       const body = JSON.parse(event.body || '{}')
       if (!/^[0-9a-f-]{36}$/i.test(body.projectId || '')) return { statusCode: 400, body: JSON.stringify({ error: 'A valid project is required.' }) }
       const requestKey = event.headers?.['idempotency-key'] || event.headers?.['Idempotency-Key'] || body.idempotencyKey || ''

@@ -56,6 +56,7 @@ test('checkout rejects existing Stripe products that do not match Website Machin
   const handler = createWebsiteMachineCheckoutApi({
     env: { WM_STRIPE_SECRET_KEY: apiKey, WM_STRIPE_PRICE_ID: setupPriceId },
     verifyUser: async () => ({ id: ownerId }),
+    isAuthorizedTester: async () => true,
     loadOwnedProject: async () => ({ id: projectId, owner_id: ownerId }),
     fetchImpl: async () => ({ ok: true, json: async () => ({ id: setupPriceId, active: true, currency: 'gbp', unit_amount: 19900, recurring: null, product: { active: true, name: 'Website Machine One-off' } }) }),
   })
@@ -95,12 +96,43 @@ test('restricted Stripe test keys are accepted while live restricted keys are re
   assert.equal(externalCalls, 0)
 })
 
+test('staging checkout denies users outside the tester allowlist before project, Stripe, or order access', async () => {
+  let downstreamCalls = 0
+  const checkout = createWebsiteMachineCheckoutApi({
+    env: { WM_STRIPE_SECRET_KEY: apiKey, WM_STRIPE_PRICE_ID: setupPriceId },
+    verifyUser: async () => ({ id: ownerId }),
+    isAuthorizedTester: async () => false,
+    loadOwnedProject: async () => { downstreamCalls += 1; return { id: projectId, owner_id: ownerId } },
+    createOrder: async () => { downstreamCalls += 1; return { id: orderId } },
+    fetchImpl: async () => { downstreamCalls += 1; throw new Error('unauthorized tester must not contact Stripe') },
+  })
+  const response = await checkout({ httpMethod: 'POST', headers: { authorization: 'Bearer customer-session' }, body: JSON.stringify({ projectId, idempotencyKey: 'wm-checkout-allowlist-01' }) })
+  assert.equal(response.statusCode, 403)
+  assert.match(JSON.parse(response.body).error, /approved testers/)
+  assert.equal(downstreamCalls, 0)
+})
+
+test('staging checkout fails closed when tester authorization is unavailable', async () => {
+  let downstreamCalls = 0
+  const checkout = createWebsiteMachineCheckoutApi({
+    env: { WM_STRIPE_SECRET_KEY: apiKey, WM_STRIPE_PRICE_ID: setupPriceId },
+    verifyUser: async () => ({ id: ownerId }),
+    isAuthorizedTester: async () => { throw new Error('database unavailable') },
+    loadOwnedProject: async () => { downstreamCalls += 1; return { id: projectId, owner_id: ownerId } },
+    fetchImpl: async () => { downstreamCalls += 1; throw new Error('must remain unreachable') },
+  })
+  const response = await checkout({ httpMethod: 'POST', headers: { authorization: 'Bearer customer-session' }, body: JSON.stringify({ projectId, idempotencyKey: 'wm-checkout-allowlist-02' }) })
+  assert.equal(response.statusCode, 503)
+  assert.equal(downstreamCalls, 0)
+})
+
 test('checkout uses authenticated project ownership and creates Stripe-hosted session with exact prices', async () => {
   const calls = []
   let savedSession
   const handler = createWebsiteMachineCheckoutApi({
     env: { WM_STRIPE_SECRET_KEY: apiKey, WM_STRIPE_PRICE_ID: setupPriceId, URL: 'https://staging.example.net' },
     verifyUser: async (token) => token === 'user-token' ? { id: ownerId } : null,
+    isAuthorizedTester: async ({ user }) => user.id === ownerId,
     loadOwnedProject: async ({ ownerId: requestedOwner }) => requestedOwner === ownerId ? { id: projectId, owner_id: ownerId } : null,
     createOrder: async () => ({ id: orderId }),
     saveCheckoutSession: async (value) => { savedSession = value },
@@ -169,6 +201,7 @@ test('synthetic £99 purchase flows from Checkout through signed fulfillment, is
   const checkout = createWebsiteMachineCheckoutApi({
     env: { WM_STRIPE_SECRET_KEY: apiKey, WM_STRIPE_PRICE_ID: setupPriceId, URL: 'https://bendarus.netlify.app' },
     verifyUser: async () => ({ id: ownerId }),
+    isAuthorizedTester: async () => true,
     loadOwnedProject: async () => ({ id: projectId, owner_id: ownerId }),
     createOrder: async () => ({ id: orderId }),
     saveCheckoutSession: async () => {},

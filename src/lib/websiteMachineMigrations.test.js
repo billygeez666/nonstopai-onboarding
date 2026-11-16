@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs'
 
 const commerce = readFileSync(new URL('../../supabase/migrations/202611160003_website_machine_orders_and_sites.sql', import.meta.url), 'utf8')
 const oneOff = readFileSync(new URL('../../supabase/migrations/202611160004_website_machine_99_test_only.sql', import.meta.url), 'utf8')
+const testerAllowlist = readFileSync(new URL('../../supabase/migrations/20261116223008_website_machine_staging_checkout_tester_allowlist.sql', import.meta.url), 'utf8')
 
 test('commerce migration seeds and leaves every Website Machine Stripe offer inactive', () => {
   const offerInsert = commerce.match(/insert into public\.wm_offer_prices[\s\S]*?on conflict \(mode, purpose\) do nothing;/i)?.[0]
@@ -48,4 +49,19 @@ test('migrations detect missing and partially applied prerequisites without dest
   assert.match(commerce, /extensions\.hmac\(bytea,bytea,text\)/)
   assert.match(oneOff, /vault\.decrypted_secrets/)
   assert.match(oneOff, /extensions\.hmac\(bytea,bytea,text\)/)
+})
+
+test('staging tester allowlist is private, empty-by-default, and enforced in both RPC layers', () => {
+  assert.match(testerAllowlist, /create table if not exists wm_internal\.wm_staging_checkout_testers/i)
+  assert.match(testerAllowlist, /enabled boolean not null default false/i)
+  assert.match(testerAllowlist, /alter table wm_internal\.wm_staging_checkout_testers enable row level security/i)
+  assert.match(testerAllowlist, /revoke all on table wm_internal\.wm_staging_checkout_testers from public, anon, authenticated/i)
+  assert.match(testerAllowlist, /create or replace function public\.wm_is_staging_checkout_tester\(\)/i)
+  assert.match(testerAllowlist, /user_id = auth\.uid\(\)[\s\S]*?t\.enabled/i)
+  assert.match(testerAllowlist, /revoke all on function public\.wm_is_staging_checkout_tester\(\) from public, anon, authenticated/i)
+  assert.match(testerAllowlist, /grant execute on function public\.wm_is_staging_checkout_tester\(\) to authenticated/i)
+  const orderRpc = testerAllowlist.slice(testerAllowlist.indexOf('create or replace function public.wm_create_checkout_order'))
+  assert.match(orderRpc, /wm_internal\.wm_staging_checkout_testers[\s\S]*?user_id = v_owner[\s\S]*?t\.enabled[\s\S]*?staging tester access required/i)
+  assert.ok(orderRpc.indexOf('staging tester access required') < orderRpc.indexOf('insert into public.wm_orders'))
+  assert.doesNotMatch(testerAllowlist, /update\s+public\.wm_offer_prices|set\s+active\s*=|insert\s+into\s+wm_internal\.wm_staging_checkout_testers/i)
 })

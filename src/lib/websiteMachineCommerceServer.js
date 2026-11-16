@@ -169,6 +169,7 @@ export function createWebsiteMachineCheckoutHandler({ env = process.env, fetchIm
       const response = await fetchImpl(`${config.url}/auth/v1/user`, { headers: { apikey: config.publishableKey, authorization: `Bearer ${token}` } })
       return response.ok ? response.json() : null
     },
+    isAuthorizedTester: async ({ token }) => (await rpc('wm_is_staging_checkout_tester', {}, token)) === true,
     loadOwnedProject: async ({ token, projectId, ownerId }) => {
       const response = await fetchImpl(`${config.url}/rest/v1/wm_projects?id=eq.${encodeURIComponent(projectId)}&select=id,owner_id,content,status`, {
         headers: { apikey: config.publishableKey, authorization: `Bearer ${token}` },

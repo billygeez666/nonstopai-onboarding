@@ -66,6 +66,41 @@ test('staging accepts the configured Stripe secret names while still requiring a
   assert.equal((await unsafe({ httpMethod: 'POST', body: '{}' })).statusCode, 503)
 })
 
+test('staging checkout asks the self-only tester RPC before reading the owner project', async () => {
+  const env = {
+    WM_RUNTIME_ENV: 'staging', WM_STAGING_SUPABASE_URL: supabase,
+    WM_STAGING_SUPABASE_PUBLISHABLE_KEY: 'staging-publishable', WM_STAGING_PUBLIC_URL: 'https://bendarus.netlify.app',
+    WM_STAGING_STRIPE_SECRET_KEY: 'sk_test_staging', WM_STAGING_STRIPE_WEBHOOK_SECRET: 'whsec_staging',
+    WM_STAGING_STRIPE_PRICE_ID: 'price_test_fixture_website_machine_99', WM_STAGING_PAYMENT_RPC_SECRET: 's'.repeat(40),
+    WM_STAGING_NETLIFY_CUSTOMER_TOKEN: 'staging-netlify-token', WM_STAGING_NETLIFY_ACCOUNT_SLUG: 'website-machine',
+    WM_STAGING_EMAIL_API_KEY: 'email-key', WM_STAGING_DELIVERY_FROM_EMAIL: 'websites@example.test',
+  }
+  const projectId = 'c70f3d5f-f910-441a-9b39-8374d1d28532'
+  const ownerId = '7a9d31b9-5bbb-48e8-83ec-5200a5293314'
+  async function invoke(allowed) {
+    const calls = []
+    const handler = createWebsiteMachineCheckoutHandler({ env, fetchImpl: async (url, options = {}) => {
+      calls.push({ url, options })
+      if (url.endsWith('/auth/v1/user')) return { ok: true, json: async () => ({ id: ownerId }) }
+      if (url.endsWith('/rpc/wm_is_staging_checkout_tester')) return { ok: true, json: async () => allowed }
+      if (url.includes('/rest/v1/wm_projects')) return { ok: true, json: async () => [] }
+      throw new Error('project or tester checks must stop before Stripe')
+    } })
+    const response = await handler({ httpMethod: 'POST', headers: { authorization: 'Bearer staging-user-token' }, body: JSON.stringify({ projectId, idempotencyKey: `wm-private-test-${allowed ? 'yes' : 'no'}-01` }) })
+    return { response, calls }
+  }
+
+  const denied = await invoke(false)
+  assert.equal(denied.response.statusCode, 403)
+  assert.deepEqual(denied.calls.map((call) => call.url.split('/').at(-1)), ['user', 'wm_is_staging_checkout_tester'])
+  assert.equal(denied.calls[1].options.headers.authorization, 'Bearer staging-user-token')
+  assert.deepEqual(JSON.parse(denied.calls[1].options.body), {})
+
+  const allowed = await invoke(true)
+  assert.equal(allowed.response.statusCode, 404)
+  assert.deepEqual(allowed.calls.map((call) => call.url.split('/').at(-1)), ['user', 'wm_is_staging_checkout_tester', `wm_projects?id=eq.${projectId}&select=id,owner_id,content,status`])
+})
+
 test('staging readiness diagnostic verifies the RPC secret and reports only missing variable names', async () => {
   const secret = 'synthetic-test-payment-rpc-secret-0123456789'
   const now = Date.now()
