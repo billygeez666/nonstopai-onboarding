@@ -10,9 +10,12 @@ function runtime(env) {
   const production = config.mode === 'production'
   return {
     ...config,
-    stripeSecret: production ? env.WM_PRODUCTION_STRIPE_SECRET_KEY : env.WM_STAGING_STRIPE_SECRET_KEY,
-    stripeWebhookSecret: production ? env.WM_PRODUCTION_STRIPE_WEBHOOK_SECRET : env.WM_STAGING_STRIPE_WEBHOOK_SECRET,
-    stripePrice: production ? env.WM_PRODUCTION_STRIPE_PRICE_ID : env.WM_STAGING_STRIPE_PRICE_ID,
+    // Netlify has the short Stripe variable names configured on the isolated
+    // staging site. Keep the namespaced variables preferred, and accept the
+    // short aliases only in staging; stagingCommerceReady still requires sk_test_.
+    stripeSecret: production ? env.WM_PRODUCTION_STRIPE_SECRET_KEY : (env.WM_STAGING_STRIPE_SECRET_KEY || env.STRIPE_SECRET_KEY),
+    stripeWebhookSecret: production ? env.WM_PRODUCTION_STRIPE_WEBHOOK_SECRET : (env.WM_STAGING_STRIPE_WEBHOOK_SECRET || env.STRIPE_WEBHOOK_SECRET),
+    stripePrice: production ? env.WM_PRODUCTION_STRIPE_PRICE_ID : (env.WM_STAGING_STRIPE_PRICE_ID || env.STRIPE_PRICE_ID),
     rpcSecret: production ? env.WM_PRODUCTION_PAYMENT_RPC_SECRET : env.WM_STAGING_PAYMENT_RPC_SECRET,
     netlifyToken: production ? env.WM_PRODUCTION_NETLIFY_CUSTOMER_TOKEN : env.WM_STAGING_NETLIFY_CUSTOMER_TOKEN,
     netlifyAccountSlug: production ? env.WM_PRODUCTION_NETLIFY_ACCOUNT_SLUG : env.WM_STAGING_NETLIFY_ACCOUNT_SLUG,

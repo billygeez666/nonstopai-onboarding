@@ -48,6 +48,23 @@ test('staging webhook stays disabled until a dedicated Netlify account is config
   assert.equal(requests, 0)
 })
 
+test('staging accepts the configured Stripe secret names while still requiring a test key', async () => {
+  const base = {
+    WM_RUNTIME_ENV: 'staging', WM_STAGING_SUPABASE_URL: supabase,
+    WM_STAGING_SUPABASE_PUBLISHABLE_KEY: 'staging-publishable', WM_STAGING_PUBLIC_URL: 'https://bendarus.netlify.app',
+    STRIPE_SECRET_KEY: 'sk_test_staging', STRIPE_WEBHOOK_SECRET: 'whsec_staging',
+    STRIPE_PRICE_ID: 'price_1UcSDCEWP0eV3FnnUS5CHpdZ',
+    WM_STAGING_PAYMENT_RPC_SECRET: 's'.repeat(40), WM_STAGING_NETLIFY_CUSTOMER_TOKEN: 'dedicated-staging-token',
+    WM_STAGING_NETLIFY_ACCOUNT_SLUG: 'website-machine', WM_STAGING_EMAIL_API_KEY: 'staging-email-key',
+    WM_STAGING_DELIVERY_FROM_EMAIL: 'websites@example.test',
+  }
+  const handler = createWebsiteMachineStripeWebhookHandler({ env: base, fetchImpl: async () => { throw new Error('GET must not make network requests') } })
+  assert.equal((await handler({ httpMethod: 'GET' })).statusCode, 405)
+
+  const unsafe = createWebsiteMachineStripeWebhookHandler({ env: { ...base, STRIPE_SECRET_KEY: 'sk_live_must_not_be_used' } })
+  assert.equal((await unsafe({ httpMethod: 'POST', body: '{}' })).statusCode, 503)
+})
+
 test('customer site status requires the owner session and returns no row for another project owner', async () => {
   const projectId = 'c70f3d5f-f910-441a-9b39-8374d1d28532'
   const ownerId = 'd3cbfcf4-7cb8-4f63-a20d-73d963a88791'
