@@ -1,9 +1,10 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { generateWebsiteContent, renderStaticWebsite, sanitizeEditableText, validateBusinessInput } from '../lib/websiteMachine.js'
 import { buildResearchBrief } from '../lib/websiteMachineResearch.js'
 import './WebsiteMachine.css'
 import './WebsiteMachineEdits.css'
 import './WebsiteMachineExport.css'
+import './WebsiteMachineCommerce.css'
 
 const example = {
   businessName: 'Northstar Motor Works',
@@ -25,6 +26,10 @@ export default function WebsiteMachine() {
   const [source, setSource] = useState({ label: '', url: '', findings: '' })
   const [project, setProject] = useState(null)
   const [publishedPreviewUrl, setPublishedPreviewUrl] = useState('')
+  const [domain, setDomain] = useState('')
+  const [domainChallenge, setDomainChallenge] = useState(null)
+  const [domainRecord, setDomainRecord] = useState(null)
+  const [customerSite, setCustomerSite] = useState(null)
   const [serviceState, setServiceState] = useState('')
   const [busy, setBusy] = useState(false)
   const [session, setSession] = useState(() => sessionStorage.getItem('wm_access_token') || '')
@@ -32,9 +37,34 @@ export default function WebsiteMachine() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [authError, setAuthError] = useState('')
+  const paymentNotice = new URLSearchParams(window.location.search).get('payment')
+  const returnProjectId = new URLSearchParams(window.location.search).get('project_id')
   const createKey = useRef('')
   const isSample = content.facts.join('\n') === example.verifiedInfo
   const facts = content.facts
+
+  useEffect(() => {
+    if (paymentNotice !== 'processing' || !returnProjectId || !session) return undefined
+    let cancelled = false
+    let timer
+    let attempt = 0
+    const checkDelivery = async () => {
+      attempt += 1
+      try {
+        const response = await fetch(`/.netlify/functions/website-machine-customer-site?project_id=${encodeURIComponent(returnProjectId)}`, {
+          headers: { authorization: `Bearer ${session}` },
+        })
+        if (response.ok) {
+          const result = await response.json()
+          if (!cancelled) setCustomerSite(result)
+          if (result.status === 'delivered') return
+        }
+      } catch { /* Delivery status remains available by refreshing this page. */ }
+      if (!cancelled && attempt < 10) timer = window.setTimeout(checkDelivery, 3000)
+    }
+    checkDelivery()
+    return () => { cancelled = true; window.clearTimeout(timer) }
+  }, [paymentNotice, returnProjectId, session])
 
   function updateInput(event) {
     setInput((current) => ({ ...current, [event.target.name]: event.target.value }))
@@ -150,6 +180,70 @@ export default function WebsiteMachine() {
     }
   }
 
+  async function requestDomainChallenge(event) {
+    event.preventDefault()
+    setBusy(true)
+    setServiceState('')
+    setDomainRecord(null)
+    try {
+      if (!session) throw new Error('Sign in before verifying a custom domain.')
+      const response = await fetch('/.netlify/functions/website-machine-domain-challenge', {
+        method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${session}` },
+        body: JSON.stringify({ domain }),
+      })
+      const result = await response.json()
+      if (!response.ok) throw new Error(result.error || 'Could not create a domain verification record.')
+      setDomainChallenge(result)
+      setDomainRecord({ name: result.recordName, value: result.recordValue, expiresAt: result.expiresAt })
+      setServiceState('Add this TXT record at your DNS provider. Ownership is checked again before checkout and publishing.')
+    } catch (error) {
+      setDomainChallenge(null)
+      setServiceState(error.message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function beginCheckout() {
+    setBusy(true)
+    setServiceState('')
+    try {
+      if (!session) throw new Error('Sign in before continuing to secure checkout.')
+      if (domain.trim() && (!domainChallenge || domainChallenge.domain !== domain.trim().toLowerCase().replace(/\.$/, '') || Date.parse(domainChallenge.expiresAt) <= Date.now())) {
+        throw new Error('Verify the custom domain TXT record before checkout, or clear the optional domain field.')
+      }
+      const checked = validateBusinessInput(input)
+      if (!checked.ok) throw new Error('Fix the business information before checkout.')
+      const research = source.label || source.url || source.findings
+        ? buildResearchBrief([{ ...source, verifiedAt: new Date().toISOString() }])
+        : { ok: true, verifiedFindings: [] }
+      if (!research.ok) throw new Error(research.error)
+      const action = project
+        ? await fetch(`/.netlify/functions/website-machine-project?id=${encodeURIComponent(project.id)}`, {
+          method: 'PUT', headers: { 'content-type': 'application/json', authorization: `Bearer ${session}` },
+          body: JSON.stringify({ content, business: checked.value, research: research.verifiedFindings }),
+        })
+        : await fetch('/.netlify/functions/website-machine-project', {
+          method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${session}`, 'idempotency-key': crypto.randomUUID() },
+          body: JSON.stringify({ business: checked.value, content, research: research.verifiedFindings }),
+        })
+      const saved = await action.json()
+      if (!action.ok) throw new Error(saved.error || 'Could not save the project before checkout.')
+      const projectId = project?.id || saved.id
+      setProject({ id: projectId })
+      const response = await fetch('/.netlify/functions/website-machine-checkout', {
+        method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${session}`, 'idempotency-key': crypto.randomUUID() },
+        body: JSON.stringify({ projectId, ...(domain.trim() ? { domain: domainChallenge.domain, domainChallenge } : {}) }),
+      })
+      const result = await response.json()
+      if (!response.ok) throw new Error(result.error || 'Secure checkout could not be prepared.')
+      window.location.assign(result.checkoutUrl)
+    } catch (error) {
+      setServiceState(error.message)
+      setBusy(false)
+    }
+  }
+
   return (
     <main className="wm-app">
       <header className="wm-topbar"><a href="/" className="wm-brand">NONSTOP <span>AI</span></a><span className="wm-local">MVP PROTOTYPE · CUSTOMER SITES UNPUBLISHED</span></header>
@@ -238,7 +332,21 @@ export default function WebsiteMachine() {
             <button type="button" onClick={() => projectAction('delivery')} disabled={busy || !project || !session}>Prepare delivery file</button>
           </div>
           {serviceState && <p className="wm-service-state" role="status">{serviceState}</p>}
+          {paymentNotice === 'processing' && <p className="wm-service-state" role="status">Payment is being confirmed. Website delivery starts only after the signed Stripe confirmation is verified.</p>}
+          {customerSite?.status === 'delivered' && <p className="wm-service-state" role="status">Your website is live. <a href={customerSite.site_url} target="_blank" rel="noreferrer">Open customer website ↗</a></p>}
+          {paymentNotice === 'cancelled' && <p className="wm-service-state" role="status">Checkout was cancelled. No website has been published.</p>}
           {publishedPreviewUrl && <a className="wm-published-preview-link" href={publishedPreviewUrl} target="_blank" rel="noreferrer">Open secure website preview ↗</a>}
+          <section className="wm-checkout-panel" aria-labelledby="wm-delivery-title">
+            <span className="wm-step">03 / CUSTOMER DELIVERY</span>
+            <h2 id="wm-delivery-title">Make this website yours</h2>
+            <p>£199 one-time setup, then £50/month for hosting, booking and support. The site is created only after Stripe confirms payment.</p>
+            <label className="wm-field"><span>Custom domain <b>OPTIONAL</b></span><input value={domain} maxLength={253} placeholder="www.yourbusiness.co.uk" onChange={(event) => { setDomain(event.target.value); setDomainChallenge(null); setDomainRecord(null) }} /></label>
+            {domain.trim() && <button type="button" onClick={requestDomainChallenge} disabled={busy || !session}>Create DNS ownership check</button>}
+            {domainRecord && <div className="wm-domain-record"><b>TXT record · expires {new Date(domainRecord.expiresAt).toLocaleString()}</b><code>{domainRecord.name}</code><code>{domainRecord.value}</code></div>}
+            <button type="button" className="wm-checkout-button" onClick={beginCheckout} disabled={busy || !session}>{busy ? 'Preparing secure checkout…' : 'Continue to secure checkout'}</button>
+            {!session && <small>Sign in to save this project and continue.</small>}
+            <small>Payments are confirmed by a signed Stripe webhook. Returning from checkout alone never starts delivery.</small>
+          </section>
         </section>
       </div>
       <footer className="wm-page-footer">WEBSITE MACHINE <span>·</span> STRUCTURED CONTENT <span>·</span> CONTROLLED TEMPLATE <span>·</span> NO CUSTOMER SITE PUBLISHED</footer>

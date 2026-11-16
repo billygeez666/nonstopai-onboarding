@@ -2,11 +2,19 @@ import { createHash, randomBytes } from 'node:crypto'
 import { generateWebsiteContent, renderStaticWebsite, sanitizeWebsiteContent, validateBusinessInput } from './websiteMachine.js'
 import { validateResearchSources } from './websiteMachineResearch.js'
 
-const STAGING_SUPABASE_URL = 'https://lqywsbqctoydtdqvjzzw.supabase.co'
-const STAGING_PUBLIC_URL = 'https://nonstopai-staging-preview.netlify.app'
+const ACTIVE_CRM_SUPABASE_URL = 'https://lqywsbqctoydtdqvjzzw.supabase.co'
 const json = (statusCode, body, headers = {}) => ({ statusCode, headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', ...headers }, body: JSON.stringify(body) })
 const cors = (headers = {}) => ({ ...headers, 'access-control-allow-origin': process.env.URL || 'http://localhost:5173', 'access-control-allow-headers': 'content-type, authorization, idempotency-key', 'access-control-allow-methods': 'GET, POST, PUT, OPTIONS', vary: 'Origin' })
 const bearer = (event) => (event.headers?.authorization || event.headers?.Authorization || '').match(/^Bearer\s+(.+)$/i)?.[1] || ''
+
+export function getWebsiteMachineConfig(env = process.env) {
+  const production = env.WM_RUNTIME_ENV === 'production'
+  const url = production ? env.WM_PRODUCTION_SUPABASE_URL : (env.WM_STAGING_SUPABASE_URL || env.WM_SUPABASE_URL)
+  const publishableKey = production ? env.WM_PRODUCTION_SUPABASE_PUBLISHABLE_KEY : (env.WM_STAGING_SUPABASE_PUBLISHABLE_KEY || env.WM_SUPABASE_PUBLISHABLE_KEY)
+  const publicUrl = production ? env.WM_PRODUCTION_PUBLIC_URL : (env.WM_STAGING_PUBLIC_URL || 'https://nonstopai-staging-preview.netlify.app')
+  if (url !== ACTIVE_CRM_SUPABASE_URL || !publishableKey || !publicUrl?.startsWith('https://')) return null
+  return { url, publishableKey, publicUrl, mode: production ? 'production' : 'staging' }
+}
 
 function asResponseError(error) {
   if (error?.status === 429) return json(429, { error: 'Project creation limit reached. Try again in the next hour.' }, cors())
@@ -14,8 +22,9 @@ function asResponseError(error) {
 }
 
 async function verifyUser({ token, env, fetchImpl }) {
-  if (!token || token.length > 4096 || env.WM_STAGING_SUPABASE_URL !== STAGING_SUPABASE_URL || !env.WM_STAGING_SUPABASE_PUBLISHABLE_KEY) return null
-  const response = await fetchImpl(`${STAGING_SUPABASE_URL}/auth/v1/user`, { headers: { apikey: env.WM_STAGING_SUPABASE_PUBLISHABLE_KEY, authorization: `Bearer ${token}` } })
+  const config = getWebsiteMachineConfig(env)
+  if (!token || token.length > 4096 || !config) return null
+  const response = await fetchImpl(`${config.url}/auth/v1/user`, { headers: { apikey: config.publishableKey, authorization: `Bearer ${token}` } })
   if (!response.ok) return null
   const user = await response.json()
   return typeof user.id === 'string' && /^[0-9a-f-]{36}$/i.test(user.id) ? user : null
@@ -25,12 +34,13 @@ export function createAuthApi({ env = process.env, fetchImpl = fetch } = {}) {
   return async (event) => {
     if (event.httpMethod === 'OPTIONS') return { statusCode: 204, headers: cors() }
     if (event.httpMethod !== 'POST') return json(405, { error: 'Method not allowed.' }, cors())
-    if (env.WM_STAGING_SUPABASE_URL !== STAGING_SUPABASE_URL || !env.WM_STAGING_SUPABASE_PUBLISHABLE_KEY) return json(503, { error: 'Website Machine authentication is not configured.' }, cors())
+    const config = getWebsiteMachineConfig(env)
+    if (!config) return json(503, { error: 'Website Machine authentication is not configured.' }, cors())
     try {
       if (Buffer.byteLength(event.body || '') > 5000) return json(413, { error: 'Request is too large.' }, cors())
       const body = JSON.parse(event.body || '{}')
       if (typeof body.email !== 'string' || body.email.length > 254 || typeof body.password !== 'string' || body.password.length > 1024) return json(400, { error: 'Enter a valid email and password.' }, cors())
-      const response = await fetchImpl(`${STAGING_SUPABASE_URL}/auth/v1/token?grant_type=password`, { method: 'POST', headers: { apikey: env.WM_STAGING_SUPABASE_PUBLISHABLE_KEY, 'content-type': 'application/json' }, body: JSON.stringify({ email: body.email.trim(), password: body.password }) })
+      const response = await fetchImpl(`${config.url}/auth/v1/token?grant_type=password`, { method: 'POST', headers: { apikey: config.publishableKey, 'content-type': 'application/json' }, body: JSON.stringify({ email: body.email.trim(), password: body.password }) })
       if (!response.ok) return json(401, { error: 'Sign-in failed. Check your account details.' }, cors())
       const session = await response.json()
       if (typeof session.access_token !== 'string' || !session.user?.id) return json(401, { error: 'Sign-in failed. Check your account details.' }, cors())
@@ -42,8 +52,9 @@ export function createAuthApi({ env = process.env, fetchImpl = fetch } = {}) {
 }
 
 export function createProjectApi({ env = process.env, fetchImpl = fetch } = {}) {
+  const config = getWebsiteMachineConfig(env)
   async function db(path, token, options = {}) {
-    const response = await fetchImpl(`${STAGING_SUPABASE_URL}/rest/v1/${path}`, { ...options, headers: { apikey: env.WM_STAGING_SUPABASE_PUBLISHABLE_KEY, authorization: `Bearer ${token}`, 'content-type': 'application/json', ...options.headers } })
+    const response = await fetchImpl(`${config.url}/rest/v1/${path}`, { ...options, headers: { apikey: config.publishableKey, authorization: `Bearer ${token}`, 'content-type': 'application/json', ...options.headers } })
     if (!response.ok) {
       const details = await response.json().catch(() => ({}))
       const error = new Error('Storage request failed')
@@ -55,7 +66,7 @@ export function createProjectApi({ env = process.env, fetchImpl = fetch } = {}) 
 
   return async (event) => {
     if (event.httpMethod === 'OPTIONS') return { statusCode: 204, headers: cors() }
-    if (env.WM_STAGING_SUPABASE_URL !== STAGING_SUPABASE_URL || !env.WM_STAGING_SUPABASE_PUBLISHABLE_KEY) return json(503, { error: 'Website Machine storage is not configured.' }, cors())
+    if (!config) return json(503, { error: 'Website Machine storage is not configured.' }, cors())
     try {
       const token = bearer(event)
       const user = await verifyUser({ token, env, fetchImpl })
@@ -112,10 +123,11 @@ export function createProjectApi({ env = process.env, fetchImpl = fetch } = {}) 
 
 export function createPreviewApi({ env = process.env, fetchImpl = fetch, tokenFactory = () => randomBytes(32).toString('base64url'), now = () => Date.now() } = {}) {
   const projectApi = createProjectApi({ env, fetchImpl })
+  const config = getWebsiteMachineConfig(env)
   return async (event) => {
     if (event.httpMethod === 'OPTIONS') return { statusCode: 204, headers: cors() }
     if (event.httpMethod !== 'POST') return json(405, { error: 'Method not allowed.' }, cors())
-    if (env.WM_STAGING_SUPABASE_URL !== STAGING_SUPABASE_URL || !env.WM_STAGING_SUPABASE_PUBLISHABLE_KEY) return json(503, { error: 'Website Machine preview publishing is not configured.' }, cors())
+    if (!config) return json(503, { error: 'Website Machine preview publishing is not configured.' }, cors())
     try {
       if (Buffer.byteLength(event.body || '') > 2000) return json(413, { error: 'Request is too large.' }, cors())
       const body = JSON.parse(event.body || '{}')
@@ -125,12 +137,12 @@ export function createPreviewApi({ env = process.env, fetchImpl = fetch, tokenFa
       const previewToken = tokenFactory()
       const tokenHash = createHash('sha256').update(previewToken).digest('hex')
       const expiresAt = new Date(now() + 7 * 24 * 60 * 60 * 1000).toISOString()
-      const previewUrl = new URL('/.netlify/functions/website-machine-render-preview', STAGING_PUBLIC_URL)
+      const previewUrl = new URL('/.netlify/functions/website-machine-render-preview', config.publicUrl)
       previewUrl.searchParams.set('id', project.id)
       previewUrl.searchParams.set('token', previewToken)
       const token = bearer(event)
-      const saved = await fetchImpl(`${STAGING_SUPABASE_URL}/rest/v1/wm_projects?id=eq.${encodeURIComponent(body.id)}`, {
-        method: 'PATCH', headers: { apikey: env.WM_STAGING_SUPABASE_PUBLISHABLE_KEY, authorization: `Bearer ${token}`, 'content-type': 'application/json', prefer: 'return=minimal' },
+      const saved = await fetchImpl(`${config.url}/rest/v1/wm_projects?id=eq.${encodeURIComponent(body.id)}`, {
+        method: 'PATCH', headers: { apikey: config.publishableKey, authorization: `Bearer ${token}`, 'content-type': 'application/json', prefer: 'return=minimal' },
         body: JSON.stringify({ status: 'preview_ready', preview_deploy_id: null, preview_url: previewUrl.toString(), preview_token_hash: tokenHash, preview_expires_at: expiresAt }),
       })
       if (!saved.ok) throw new Error('Could not record preview state')
@@ -142,16 +154,17 @@ export function createPreviewApi({ env = process.env, fetchImpl = fetch, tokenFa
 }
 
 export function createRenderPreviewApi({ env = process.env, fetchImpl = fetch } = {}) {
+  const config = getWebsiteMachineConfig(env)
   return async (event) => {
     if (event.httpMethod !== 'GET') return { statusCode: 405, headers: { 'cache-control': 'no-store' }, body: '' }
-    if (env.WM_STAGING_SUPABASE_URL !== STAGING_SUPABASE_URL || !env.WM_STAGING_SUPABASE_PUBLISHABLE_KEY) return { statusCode: 503, headers: { 'cache-control': 'no-store' }, body: 'Preview unavailable.' }
+    if (!config) return { statusCode: 503, headers: { 'cache-control': 'no-store' }, body: 'Preview unavailable.' }
     try {
       const url = new URL(event.rawUrl || `https://local.invalid${event.path || '/'}`)
       const id = url.searchParams.get('id') || ''
       const token = url.searchParams.get('token') || ''
       if (!/^[0-9a-f-]{36}$/i.test(id) || !/^[A-Za-z0-9_-]{43}$/.test(token)) return { statusCode: 404, headers: { 'cache-control': 'no-store' }, body: 'Preview not found.' }
       const tokenHash = createHash('sha256').update(token).digest('hex')
-      const response = await fetchImpl(`${STAGING_SUPABASE_URL}/rest/v1/rpc/wm_get_public_preview`, { method: 'POST', headers: { apikey: env.WM_STAGING_SUPABASE_PUBLISHABLE_KEY, 'content-type': 'application/json' }, body: JSON.stringify({ p_project_id: id, p_token_hash: tokenHash }) })
+      const response = await fetchImpl(`${config.url}/rest/v1/rpc/wm_get_public_preview`, { method: 'POST', headers: { apikey: config.publishableKey, 'content-type': 'application/json' }, body: JSON.stringify({ p_project_id: id, p_token_hash: tokenHash }) })
       if (!response.ok) throw new Error('Preview read failed')
       const rows = await response.json()
       if (!rows?.length) return { statusCode: 404, headers: { 'cache-control': 'no-store' }, body: 'Preview not found or expired.' }

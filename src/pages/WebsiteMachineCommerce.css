@@ -1,0 +1,8 @@
+.wm-checkout-panel{margin-top:22px;padding:18px;background:#141616;border:1px solid #30362b;border-radius:5px}
+.wm-checkout-panel h2{font:600 19px Manrope,sans-serif;letter-spacing:-.035em;margin:7px 0}
+.wm-checkout-panel>p,.wm-checkout-panel>small{display:block;color:#a3a99e;font-size:11px;line-height:1.55}
+.wm-checkout-panel>button{border:1px solid #58643b;border-radius:3px;background:#20251f;color:#d4ff5f;padding:8px 10px;font:10px 'DM Sans',sans-serif;cursor:pointer}
+.wm-checkout-panel>button:disabled{opacity:.45;cursor:not-allowed}
+.wm-checkout-panel>.wm-checkout-button{width:100%;margin:10px 0;background:#d4ff5f;color:#171a11;border-color:#d4ff5f;font-weight:700;padding:12px}
+.wm-domain-record{display:grid;gap:6px;margin:12px 0;padding:10px;background:#101212;border:1px solid #363a36;color:#b9c0b4;font-size:10px}
+.wm-domain-record code{overflow-wrap:anywhere;color:#d4ff5f}
