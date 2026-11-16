@@ -96,6 +96,11 @@ export function createNetlifyCustomerPublisher({
   sleep = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds)),
   maxPolls = 20,
 } = {}) {
+  const accountSlug = env.WM_NETLIFY_ACCOUNT_SLUG
+  if (typeof accountSlug !== 'string' || !/^[a-z0-9](?:[a-z0-9-]{0,58}[a-z0-9])?$/.test(accountSlug)) {
+    throw new Error('A dedicated Netlify Website Machine account must be configured.')
+  }
+
   async function api(path, options = {}) {
     if (!env.WM_NETLIFY_CUSTOMER_TOKEN) throw new Error('Customer site publishing is not configured.')
     const response = await fetchImpl(`${NETLIFY_API}${path}`, {
@@ -105,8 +110,14 @@ export function createNetlifyCustomerPublisher({
     return jsonResponse(response)
   }
 
-  async function verifySiteBinding(site, projectId, siteName, customDomain) {
-    if (!site?.id || site.name !== siteName || !isNetlifyHttpsUrl(site.ssl_url || site.url || '') ||
+  async function getPublisherAccountId() {
+    const account = await api(`/accounts/${encodeURIComponent(accountSlug)}`)
+    if (typeof account?.id !== 'string' || !account.id) throw new Error('Dedicated Netlify Website Machine account could not be verified.')
+    return account.id
+  }
+
+  async function verifySiteBinding(site, projectId, siteName, customDomain, accountId) {
+    if (!site?.id || site.account_id !== accountId || site.name !== siteName || !isNetlifyHttpsUrl(site.ssl_url || site.url || '') ||
         (customDomain && normalizeCustomerDomain(site.custom_domain || '') !== customDomain)) {
       throw new Error('Netlify did not return the isolated Website Machine site.')
     }
@@ -141,20 +152,21 @@ export function createNetlifyCustomerPublisher({
         if (existing.status !== 404) throw new Error('This domain is already assigned to a Netlify site or could not be safely checked.')
       }
 
+      const accountId = await getPublisherAccountId()
       const siteName = siteRecord?.siteName || `wm-${projectId.replaceAll('-', '')}`
       let site
       if (siteRecord) {
         site = await api(`/sites/${encodeURIComponent(siteRecord.siteId)}`)
         if (site.id !== siteRecord.siteId) throw new Error('Stored customer site could not be verified.')
-        await verifySiteBinding(site, projectId, siteName, customDomain)
+        await verifySiteBinding(site, projectId, siteName, customDomain, accountId)
       } else {
         try {
-          site = await api('/sites', {
+          site = await api(`/${encodeURIComponent(accountSlug)}/sites/`, {
             method: 'POST',
             headers: { 'content-type': 'application/json' },
             body: JSON.stringify({ name: siteName, ...(customDomain ? { custom_domain: customDomain } : {}) }),
           })
-          if (!site?.id || site.name !== siteName || !isNetlifyHttpsUrl(site.ssl_url || site.url || '') ||
+          if (!site?.id || site.account_id !== accountId || site.name !== siteName || !isNetlifyHttpsUrl(site.ssl_url || site.url || '') ||
               (customDomain && normalizeCustomerDomain(site.custom_domain || '') !== customDomain)) {
             throw new Error('Netlify did not return the isolated Website Machine site.')
           }
@@ -166,7 +178,7 @@ export function createNetlifyCustomerPublisher({
           if (![409, 422].includes(error.status)) throw error
           site = await api(`/sites/${encodeURIComponent(`${siteName}.netlify.app`)}`)
         }
-        await verifySiteBinding(site, projectId, siteName, customDomain)
+        await verifySiteBinding(site, projectId, siteName, customDomain, accountId)
         await persistSite({ projectId, ownerId, siteId: site.id, siteName, customDomain })
       }
 
@@ -211,7 +223,8 @@ export function createNetlifyCustomerPublisher({
       }
       const site = await api(`/sites/${encodeURIComponent(siteRecord.siteId)}`)
       if (site.id !== siteRecord.siteId) throw new Error('Rollback is limited to the verified customer site.')
-      await verifySiteBinding(site, projectId, siteRecord.siteName, siteRecord.customDomain)
+      const accountId = await getPublisherAccountId()
+      await verifySiteBinding(site, projectId, siteRecord.siteName, siteRecord.customDomain, accountId)
       const deploy = await api(`/deploys/${encodeURIComponent(deployId)}`)
       if (deploy.site_id !== siteRecord.siteId || deploy.state !== 'ready') throw new Error('Requested rollback deploy is not a successful deploy for this customer site.')
       const restored = await api(`/sites/${encodeURIComponent(siteRecord.siteId)}/deploys/${encodeURIComponent(deployId)}/restore`, { method: 'POST' })

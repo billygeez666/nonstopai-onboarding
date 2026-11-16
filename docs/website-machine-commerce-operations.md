@@ -30,6 +30,7 @@ Staging and production use different names so a missing production variable cann
 | `WM_STAGING_STRIPE_MONTHLY_PRICE_ID` | `WM_PRODUCTION_STRIPE_MONTHLY_PRICE_ID` | Verified Website Machine monthly price |
 | `WM_STAGING_PAYMENT_RPC_SECRET` | `WM_PRODUCTION_PAYMENT_RPC_SECRET` | At least 32 random bytes; also stored in Supabase Vault |
 | `WM_STAGING_NETLIFY_CUSTOMER_TOKEN` | `WM_PRODUCTION_NETLIFY_CUSTOMER_TOKEN` | Server-only Netlify publishing credential |
+| `WM_STAGING_NETLIFY_ACCOUNT_SLUG` | `WM_PRODUCTION_NETLIFY_ACCOUNT_SLUG` | Dedicated Netlify team/account that owns customer sites |
 
 Do not copy any staging secret into production or the other way around. Keep the Stripe key in server function scope, not frontend build scope. The commerce handlers return `503` until all required secrets and price IDs for that environment are present.
 
@@ -52,6 +53,22 @@ Create one dedicated **test-mode** webhook endpoint at
 for `checkout.session.completed` and `checkout.session.async_payment_succeeded`. Production must use a separate live-mode endpoint and signing secret at
 `https://nonstopai.netlify.app/.netlify/functions/website-machine-stripe-webhook`.
 
+## Netlify publisher isolation
+
+Customer publishing requires a dedicated Netlify account/team. Create separate Netlify teams for **Website Machine staging** and **Website Machine production**, with no existing NONSTOP AI sites attached. Create each publisher token while authenticated only to its matching dedicated team. Do not reuse a token from the existing NONSTOP AI team or an account-wide token that can modify existing customer sites.
+
+Set the matching team slug in `WM_STAGING_NETLIFY_ACCOUNT_SLUG` and `WM_PRODUCTION_NETLIFY_ACCOUNT_SLUG`. The publisher resolves that slug through Netlify's account API, creates new customer sites through `POST /api/v1/{account_slug}/sites/`, and checks each site's `account_id` against the resolved dedicated account before persisting it, deploying, or rolling back. The configured account slug and token must be set together; checkout/delivery fails closed if either is absent. A token with access to other accounts still must not be used: Netlify's token itself is not site-scoped.
+
+Netlify control-plane setup steps:
+
+1. Create the isolated Website Machine staging team/account and record its slug from Team settings.
+2. Generate a personal access token from a dedicated publisher identity that belongs only to that staging team; store it as the staging function secret `WM_STAGING_NETLIFY_CUSTOMER_TOKEN`.
+3. Store the staging team slug as `WM_STAGING_NETLIFY_ACCOUNT_SLUG` in staging function scope. Keep both variables server-side.
+4. Repeat with a separate Website Machine production team and token, storing them only as `WM_PRODUCTION_NETLIFY_CUSTOMER_TOKEN` and `WM_PRODUCTION_NETLIFY_ACCOUNT_SLUG` after staging purchase-to-delivery verification and production review.
+5. Confirm each team has no pre-existing sites before enabling publishing. The application creates deterministic new `wm-<project UUID>` sites only within the configured team; it never adopts or changes a site unless its project metadata and dedicated account ID both match.
+
+The existing NONSTOP AI production and staging Netlify sites are not used as publisher teams and must remain unchanged.
+
 ## Current release state
 
-The staging Netlify site has its Supabase URL and publishable key. Stripe API/webhook secrets, payment RPC secret, and a customer-publishing Netlify token are not configured. Until those are provisioned separately, checkout and publishing stay disabled. The customer-publishing credential must be reviewed for its account/team scope before release; Netlify personal access tokens are not documented as site-scoped. Production must remain disabled until the complete Stripe test-mode purchase-to-delivery flow passes on staging.
+The existing Website Machine staging site has its Supabase URL and publishable key. Stripe API/webhook secrets, payment RPC secret, and dedicated staging publisher token/team slug are not configured. Checkout and publishing therefore stay disabled. The existing NONSTOP AI production and staging Netlify sites remain outside Website Machine publishing. Production must remain disabled until the complete Stripe test-mode purchase-to-delivery flow passes on staging.

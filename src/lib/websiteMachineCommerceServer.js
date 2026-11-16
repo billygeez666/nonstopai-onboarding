@@ -15,6 +15,7 @@ function runtime(env) {
     stripeMonthlyPrice: production ? env.WM_PRODUCTION_STRIPE_MONTHLY_PRICE_ID : env.WM_STAGING_STRIPE_MONTHLY_PRICE_ID,
     rpcSecret: production ? env.WM_PRODUCTION_PAYMENT_RPC_SECRET : env.WM_STAGING_PAYMENT_RPC_SECRET,
     netlifyToken: production ? env.WM_PRODUCTION_NETLIFY_CUSTOMER_TOKEN : env.WM_STAGING_NETLIFY_CUSTOMER_TOKEN,
+    netlifyAccountSlug: production ? env.WM_PRODUCTION_NETLIFY_ACCOUNT_SLUG : env.WM_STAGING_NETLIFY_ACCOUNT_SLUG,
     liveMode: production,
   }
 }
@@ -38,7 +39,7 @@ function createRpc({ baseUrl, publishableKey, fetchImpl }) {
 
 export function createWebsiteMachineCheckoutHandler({ env = process.env, fetchImpl = fetch } = {}) {
   const config = runtime(env)
-  if (!config || !config.stripeSecret || !config.stripeWebhookSecret || !config.stripeSetupPrice || !config.stripeMonthlyPrice || !config.rpcSecret || !config.netlifyToken) return async () => ({ statusCode: 503, body: 'Website Machine checkout and delivery are not fully configured.' })
+  if (!config || !config.stripeSecret || !config.stripeWebhookSecret || !config.stripeSetupPrice || !config.stripeMonthlyPrice || !config.rpcSecret || !config.netlifyToken || !config.netlifyAccountSlug) return async () => ({ statusCode: 503, body: 'Website Machine checkout and delivery are not fully configured.' })
   const rpc = createRpc({ baseUrl: config.url, publishableKey: config.publishableKey, fetchImpl })
   return createWebsiteMachineCheckoutApi({
     env: {
@@ -131,10 +132,10 @@ export function createWebsiteMachineCustomerSiteHandler({ env = process.env, fet
 
 export function createWebsiteMachineStripeWebhookHandler({ env = process.env, fetchImpl = fetch, sleep, maxPolls } = {}) {
   const config = runtime(env)
-  if (!config || !config.stripeSecret || !config.stripeWebhookSecret || !config.stripeSetupPrice || !config.stripeMonthlyPrice || !config.rpcSecret || !config.netlifyToken) return async () => ({ statusCode: 503, body: 'Website Machine payment fulfillment is not fully configured.' })
+  if (!config || !config.stripeSecret || !config.stripeWebhookSecret || !config.stripeSetupPrice || !config.stripeMonthlyPrice || !config.rpcSecret || !config.netlifyToken || !config.netlifyAccountSlug) return async () => ({ statusCode: 503, body: 'Website Machine payment fulfillment is not fully configured.' })
   const rpc = createRpc({ baseUrl: config.url, publishableKey: config.publishableKey, fetchImpl })
   const publisher = createNetlifyCustomerPublisher({
-    env: { WM_NETLIFY_CUSTOMER_TOKEN: config.netlifyToken },
+    env: { WM_NETLIFY_CUSTOMER_TOKEN: config.netlifyToken, WM_NETLIFY_ACCOUNT_SLUG: config.netlifyAccountSlug },
     fetchImpl,
     ...(sleep ? { sleep } : {}),
     ...(maxPolls ? { maxPolls } : {}),
@@ -209,9 +210,9 @@ export function createWebsiteMachineStripeWebhookHandler({ env = process.env, fe
 
 export function createWebsiteMachineRollbackHandler({ env = process.env, fetchImpl = fetch } = {}) {
   const config = runtime(env)
-  if (!config || !config.netlifyToken || !config.rpcSecret) return async () => ({ statusCode: 503, body: 'Website Machine rollback is not configured.' })
+  if (!config || !config.netlifyToken || !config.netlifyAccountSlug || !config.rpcSecret) return async () => ({ statusCode: 503, body: 'Website Machine rollback is not configured.' })
   const rpc = createRpc({ baseUrl: config.url, publishableKey: config.publishableKey, fetchImpl })
-  const publisher = createNetlifyCustomerPublisher({ env: { WM_NETLIFY_CUSTOMER_TOKEN: config.netlifyToken }, fetchImpl })
+  const publisher = createNetlifyCustomerPublisher({ env: { WM_NETLIFY_CUSTOMER_TOKEN: config.netlifyToken, WM_NETLIFY_ACCOUNT_SLUG: config.netlifyAccountSlug }, fetchImpl })
   return async (event) => {
     if (event.httpMethod !== 'POST') return { statusCode: 405, body: 'Method not allowed.' }
     if (Buffer.byteLength(event.body || '') > 2000) return { statusCode: 413, body: 'Request is too large.' }

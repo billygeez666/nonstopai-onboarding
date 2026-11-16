@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { createWebsiteMachineCheckoutHandler, createWebsiteMachineCustomerSiteHandler } from './websiteMachineCommerceServer.js'
+import { createWebsiteMachineCheckoutHandler, createWebsiteMachineCustomerSiteHandler, createWebsiteMachineStripeWebhookHandler } from './websiteMachineCommerceServer.js'
 import { getWebsiteMachineConfig } from './websiteMachineServer.js'
 
 const supabase = 'https://lqywsbqctoydtdqvjzzw.supabase.co'
@@ -26,6 +26,20 @@ test('production checkout fails closed rather than falling back to staging secre
   const response = await handler({ httpMethod: 'POST' })
   assert.equal(response.statusCode, 503)
   assert.match(response.body, /not fully configured/)
+})
+
+test('staging webhook stays disabled until a dedicated Netlify account is configured', async () => {
+  let requests = 0
+  const handler = createWebsiteMachineStripeWebhookHandler({ env: {
+    WM_RUNTIME_ENV: 'staging', WM_STAGING_SUPABASE_URL: supabase,
+    WM_STAGING_SUPABASE_PUBLISHABLE_KEY: 'staging-publishable', WM_STAGING_PUBLIC_URL: 'https://nonstopai-staging-preview.netlify.app',
+    WM_STAGING_STRIPE_SECRET_KEY: 'sk_test_staging', WM_STAGING_STRIPE_WEBHOOK_SECRET: 'whsec_staging',
+    WM_STAGING_STRIPE_SETUP_PRICE_ID: 'price_test_setup', WM_STAGING_STRIPE_MONTHLY_PRICE_ID: 'price_test_monthly',
+    WM_STAGING_PAYMENT_RPC_SECRET: 's'.repeat(40), WM_STAGING_NETLIFY_CUSTOMER_TOKEN: 'staging-netlify-token',
+  }, fetchImpl: async () => { requests += 1; throw new Error('must remain disabled') } })
+  const response = await handler({ httpMethod: 'POST', body: '{}' })
+  assert.equal(response.statusCode, 503)
+  assert.equal(requests, 0)
 })
 
 test('customer site status requires the owner session and returns no row for another project owner', async () => {

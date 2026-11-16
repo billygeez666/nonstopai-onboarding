@@ -5,8 +5,9 @@ import { createDomainChallenge, createNetlifyCustomerPublisher, makeStaticWebsit
 const projectId = 'c70f3d5f-f910-441a-9b39-8374d1d28532'
 const ownerId = 'd3cbfcf4-7cb8-4f63-a20d-73d963a88791'
 const siteId = '61c134de-8e15-4cb9-86ea-9f9f92f03d27'
+const accountId = '3a0e2347-0ab3-4a76-ab4a-a2ab6947ef90'
 const content = { businessName: 'A&B Garage', industry: 'Garage', location: 'Leeds', websiteUrl: '', heroTitle: 'A&B Garage in Leeds', heroDescription: 'Business information for A&B Garage: Garage · Leeds.', aboutTitle: 'About A&B Garage', aboutDescription: 'Review the business information provided.', facts: ['MOT testing'], ctaLabel: 'Explore A&B Garage' }
-const env = { WM_NETLIFY_CUSTOMER_TOKEN: 'netlify-test-only-token' }
+const env = { WM_NETLIFY_CUSTOMER_TOKEN: 'netlify-test-only-token', WM_NETLIFY_ACCOUNT_SLUG: 'nonstopai-website-machine-test' }
 
 test('customer domains are normalized and reject URL syntax, IPs, reserved hosts, and invalid labels', () => {
   assert.equal(normalizeCustomerDomain(' WWW.Example.co.uk. '), 'www.example.co.uk')
@@ -43,7 +44,8 @@ test('site creation requires durable association and records a new isolated site
   const siteName = `wm-${projectId.replaceAll('-', '')}`
   const fetchImpl = async (url, options = {}) => {
     calls.push({ url, options })
-    if (url === 'https://api.netlify.com/api/v1/sites') return { ok: true, status: 200, json: async () => ({ id: siteId, name: siteName, ssl_url: `https://${siteName}.netlify.app` }) }
+    if (url === 'https://api.netlify.com/api/v1/accounts/nonstopai-website-machine-test') return { ok: true, status: 200, json: async () => ({ id: accountId }) }
+    if (url === 'https://api.netlify.com/api/v1/nonstopai-website-machine-test/sites/') return { ok: true, status: 200, json: async () => ({ id: siteId, account_id: accountId, name: siteName, ssl_url: `https://${siteName}.netlify.app` }) }
     if (url === `https://api.netlify.com/api/v1/sites/${siteId}/metadata` && options.method === 'PUT') return { ok: true, status: 200, json: async () => ({}) }
     if (url === `https://api.netlify.com/api/v1/sites/${siteId}/metadata`) return { ok: true, status: 200, json: async () => ({ website_machine_project_id: projectId }) }
     if (url === `https://api.netlify.com/api/v1/sites/${siteId}` && options.method === 'PUT') return { ok: true, status: 200, json: async () => ({ id: '0123456789abcdef01234567', site_id: siteId, state: 'ready', deploy_ssl_url: 'https://0123456789abcdef--wm-test.netlify.app' }) }
@@ -57,11 +59,14 @@ test('site creation requires durable association and records a new isolated site
   assert.equal(result.siteName, siteName)
   assert.equal(persisted[0].siteId, siteId)
   assert.equal(persisted[0].projectId, projectId)
-  assert.equal(calls[0].options.method, 'POST')
-  assert.equal(calls[1].options.method, 'PUT')
-  assert.match(calls[1].url, /\/metadata$/)
-  assert.equal(calls[3].options.method, 'PUT')
-  assert.equal(calls[3].options.headers['content-type'], 'application/zip')
+  assert.equal(calls[0].url, 'https://api.netlify.com/api/v1/accounts/nonstopai-website-machine-test')
+  assert.equal(calls[1].url, 'https://api.netlify.com/api/v1/nonstopai-website-machine-test/sites/')
+  assert.equal(calls[1].options.method, 'POST')
+  assert.equal(calls[2].options.method, 'PUT')
+  assert.match(calls[2].url, /\/metadata$/)
+  assert.equal(calls[4].options.method, 'PUT')
+  assert.equal(calls[4].options.headers['content-type'], 'application/zip')
+  assert.equal(calls.every((call) => !call.url.endsWith('/sites')), true)
 })
 
 test('custom domain must be verified and unused before a customer site is created', async () => {
@@ -71,7 +76,8 @@ test('custom domain must be verified and unused before a customer site is create
     env,
     fetchImpl: async (url, options = {}) => {
       if (url.endsWith('/sites/example.co.uk')) return { status: 404 }
-      if (url.endsWith('/sites')) { creates += 1; return { ok: true, status: 200, json: async () => ({ id: siteId, name: `wm-${projectId.replaceAll('-', '')}`, custom_domain: 'example.co.uk', ssl_url: 'https://example.netlify.app' }) } }
+      if (url.endsWith('/accounts/nonstopai-website-machine-test')) return { ok: true, status: 200, json: async () => ({ id: accountId }) }
+      if (url.endsWith('/nonstopai-website-machine-test/sites/')) { creates += 1; return { ok: true, status: 200, json: async () => ({ id: siteId, account_id: accountId, name: `wm-${projectId.replaceAll('-', '')}`, custom_domain: 'example.co.uk', ssl_url: 'https://example.netlify.app' }) } }
       if (url.endsWith(`/sites/${siteId}/metadata`) && options.method === 'PUT') return { ok: true, status: 200, json: async () => ({}) }
       if (url.endsWith(`/sites/${siteId}/metadata`)) return { ok: true, status: 200, json: async () => ({ website_machine_project_id: projectId }) }
       if (options.method === 'PUT') return { ok: true, status: 200, json: async () => ({ id: '0123456789abcdef01234567', site_id: siteId, state: 'ready', deploy_ssl_url: 'https://0123456789abcdef--wm-test.netlify.app' }) }
@@ -94,8 +100,9 @@ test('rollback requires an owner-matched Website Machine site and prior deploy i
   const calls = []
   const publisher = createNetlifyCustomerPublisher({ env, fetchImpl: async (url, options = {}) => {
     calls.push({ url, options })
+    if (url.endsWith('/accounts/nonstopai-website-machine-test')) return { ok: true, status: 200, json: async () => ({ id: accountId }) }
     if (url.endsWith(`/sites/${siteId}/metadata`)) return { ok: true, status: 200, json: async () => ({ website_machine_project_id: projectId }) }
-    if (url.endsWith(`/sites/${siteId}`)) return { ok: true, status: 200, json: async () => ({ id: siteId, name: siteName, ssl_url: `https://${siteName}.netlify.app`, published_deploy: { id: '0123456789abcdef01234567', deploy_ssl_url: 'https://0123456789abcdef--wm-test.netlify.app' } }) }
+    if (url.endsWith(`/sites/${siteId}`)) return { ok: true, status: 200, json: async () => ({ id: siteId, account_id: accountId, name: siteName, ssl_url: `https://${siteName}.netlify.app`, published_deploy: { id: '0123456789abcdef01234567', deploy_ssl_url: 'https://0123456789abcdef--wm-test.netlify.app' } }) }
     if (url.endsWith('/deploys/0123456789abcdef01234567')) return { ok: true, status: 200, json: async () => ({ id: '0123456789abcdef01234567', site_id: siteId, state: 'ready', deploy_ssl_url: 'https://old--site.netlify.app' }) }
     if (url.endsWith('/restore')) return { ok: true, status: 204, json: async () => null }
     if (url === 'https://0123456789abcdef--wm-test.netlify.app') return { ok: true, headers: new Headers({ 'content-type': 'text/html' }), text: async () => '<!doctype html><title>restored</title>' }
@@ -106,4 +113,16 @@ test('rollback requires an owner-matched Website Machine site and prior deploy i
   const restoreCall = calls.find((call) => call.url.endsWith('/restore'))
   assert.equal(restoreCall.options.method, 'POST')
   assert.match(restoreCall.url, /\/deploys\/0123456789abcdef01234567\/restore$/)
+})
+
+test('customer site publishing fails closed when Netlify account scope is missing or differs', async () => {
+  assert.throws(() => createNetlifyCustomerPublisher({ env: { WM_NETLIFY_CUSTOMER_TOKEN: env.WM_NETLIFY_CUSTOMER_TOKEN } }), /dedicated Netlify Website Machine account/)
+  let creates = 0
+  const publisher = createNetlifyCustomerPublisher({ env, fetchImpl: async (url) => {
+    if (url.endsWith('/accounts/nonstopai-website-machine-test')) return { ok: true, status: 200, json: async () => ({ id: accountId }) }
+    if (url.endsWith('/nonstopai-website-machine-test/sites/')) { creates += 1; return { ok: true, status: 200, json: async () => ({ id: siteId, account_id: 'another-netlify-account', name: `wm-${projectId.replaceAll('-', '')}`, ssl_url: `https://wm-${projectId.replaceAll('-', '')}.netlify.app` }) } }
+    throw new Error(`Unexpected request ${url}`)
+  }, persistSite: async () => {} })
+  await assert.rejects(publisher.publishPaidProject({ paid: true, projectId, ownerId, content }), /isolated Website Machine site/)
+  assert.equal(creates, 1)
 })
