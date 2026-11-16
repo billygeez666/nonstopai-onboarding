@@ -1,5 +1,46 @@
 -- Website Machine-only commerce and publishing records. No existing CRM,
 -- booking, onboarding, Stripe, or customer-site records are altered.
+-- This migration is intentionally safe in test-only mode: every inserted offer
+-- starts inactive, and both the checkout and fulfillment RPCs reject live mode.
+-- Refuse partial/incompatible pre-existing Website Machine tables instead of
+-- silently treating CREATE TABLE IF NOT EXISTS as schema repair.
+do $$
+declare v_table text; v_columns text[]; v_missing text[];
+begin
+  if to_regclass('public.wm_projects') is null then
+    raise exception 'Website Machine prerequisite missing: apply migration 001 first';
+  end if;
+  for v_table, v_columns in
+    select * from (values
+      ('wm_projects', array['id','owner_id','business','content','research','status']),
+      ('wm_offer_prices', array['mode','purpose','stripe_price_id','product_id','unit_amount','currency','recurring_interval','active']),
+      ('wm_orders', array['id','project_id','owner_id','idempotency_key','mode','setup_price_id','monthly_price_id','amount_total','currency','domain','domain_challenge','checkout_session_id','status','paid_event_id','paid_at','created_at','updated_at']),
+      ('wm_payment_events', array['event_id','order_id','checkout_session_id','created_at']),
+      ('wm_customer_sites', array['project_id','owner_id','site_id','site_name','custom_domain','current_deploy_id','previous_deploy_ids','site_url','verified_deploy_url','status','created_at','updated_at'])
+    ) as expected(table_name, column_names)
+  loop
+    if to_regclass('public.' || v_table) is not null then
+      select array_agg(required.column_name) into v_missing
+      from unnest(v_columns) as required(column_name)
+      where not exists (
+        select 1 from information_schema.columns c
+        where c.table_schema = 'public' and c.table_name = v_table and c.column_name = required.column_name
+      );
+      if v_missing is not null then
+        raise exception 'Incompatible partial Website Machine table public.%; missing columns: %', v_table, array_to_string(v_missing, ', ');
+      end if;
+    end if;
+  end loop;
+  if to_regclass('vault.decrypted_secrets') is null or
+     not exists (select 1 from information_schema.columns where table_schema = 'vault' and table_name = 'decrypted_secrets' and column_name = 'decrypted_secret') then
+    raise exception 'Supabase Vault decrypted_secrets view is unavailable';
+  end if;
+  if to_regprocedure('extensions.hmac(bytea,bytea,text)') is null then
+    raise exception 'pgcrypto hmac(bytea,bytea,text) is unavailable in the extensions schema';
+  end if;
+end;
+$$;
+
 create schema if not exists wm_internal;
 revoke all on schema wm_internal from public, anon, authenticated;
 
@@ -11,24 +52,22 @@ create table if not exists public.wm_offer_prices (
   unit_amount integer not null,
   currency text not null check (currency = 'gbp'),
   recurring_interval text,
-  active boolean not null default true,
+  active boolean not null default false,
   primary key (mode, purpose),
   check ((purpose = 'setup' and recurring_interval is null) or (purpose = 'monthly' and recurring_interval = 'month'))
 );
+alter table public.wm_offer_prices alter column active set default false;
 
-insert into public.wm_offer_prices(mode, purpose, stripe_price_id, product_id, unit_amount, currency, recurring_interval)
+insert into public.wm_offer_prices(mode, purpose, stripe_price_id, product_id, unit_amount, currency, recurring_interval, active)
 values
-  ('live', 'setup', 'price_1TtvtMEWP0eV3Fnn3Gd8ltId', 'prod_UtjLRCAGcavRsu', 19900, 'gbp', null),
-  ('live', 'monthly', 'price_1TtvtQEWP0eV3FnnCAi7Z9Ko', 'prod_UtjLmED608iIqv', 5000, 'gbp', 'month'),
-  ('test', 'setup', 'price_1UcLidEWP0eV3Fnn0GpGUYiT', 'prod_Vdcy4n9IxffrUl', 19900, 'gbp', null),
-  ('test', 'monthly', 'price_1UcLjSEWP0eV3FnnWKkhUtDA', 'prod_VdczjddIDXtY1H', 5000, 'gbp', 'month')
-on conflict (mode, purpose) do update set
-  stripe_price_id = excluded.stripe_price_id,
-  product_id = excluded.product_id,
-  unit_amount = excluded.unit_amount,
-  currency = excluded.currency,
-  recurring_interval = excluded.recurring_interval,
-  active = true;
+  ('live', 'setup', 'price_1TtvtMEWP0eV3Fnn3Gd8ltId', 'prod_UtjLRCAGcavRsu', 19900, 'gbp', null, false),
+  ('live', 'monthly', 'price_1TtvtQEWP0eV3FnnCAi7Z9Ko', 'prod_UtjLmED608iIqv', 5000, 'gbp', 'month', false),
+  ('test', 'setup', 'price_wm_99_test_pending', 'prod_wm_99_test_pending', 9900, 'gbp', null, false),
+  ('test', 'monthly', 'price_1UcLjSEWP0eV3FnnWKkhUtDA', 'prod_VdczjddIDXtY1H', 5000, 'gbp', 'month', false)
+on conflict (mode, purpose) do nothing;
+
+-- Also disable rows left behind by a partial/manual prior application.
+update public.wm_offer_prices set active = false where active;
 
 create table if not exists public.wm_orders (
   id uuid primary key default gen_random_uuid(),
@@ -37,8 +76,8 @@ create table if not exists public.wm_orders (
   idempotency_key text not null check (length(idempotency_key) between 12 and 100),
   mode text not null check (mode in ('test', 'live')),
   setup_price_id text not null,
-  monthly_price_id text not null,
-  amount_total integer not null default 24900 check (amount_total = 24900),
+  monthly_price_id text,
+  amount_total integer not null default 9900 check (amount_total in (9900, 24900)),
   currency text not null default 'gbp' check (currency = 'gbp'),
   domain text,
   domain_challenge text,
@@ -92,7 +131,6 @@ returns boolean language sql stable security definer set search_path = '' as $$
     select 1 from vault.decrypted_secrets as s
     where s.name = case split_part(p_message, E'\n', 1)
       when 'test' then 'wm_payment_rpc_secret_staging'
-      when 'live' then 'wm_payment_rpc_secret_production'
       else null
     end
       and p_signature ~ '^[0-9a-f]{64}$'
@@ -114,24 +152,38 @@ returns setof public.wm_orders language plpgsql security definer set search_path
 declare v_owner uuid := auth.uid(); v_order public.wm_orders; v_recent_count integer;
 begin
   if v_owner is null then raise exception 'authentication required' using errcode = '42501'; end if;
-  if p_mode not in ('test', 'live') or length(p_idempotency_key) not between 12 and 100 then raise exception 'invalid order request' using errcode = '22023'; end if;
+  if p_mode is distinct from 'test' or p_monthly_price_id is not null or p_idempotency_key is null or length(p_idempotency_key) not between 12 and 100 then raise exception 'invalid one-off test order request' using errcode = '22023'; end if;
   if not exists (select 1 from public.wm_projects p where p.id = p_project_id and p.owner_id = v_owner) then raise exception 'project not found' using errcode = 'P0002'; end if;
-  if not exists (select 1 from public.wm_offer_prices p where p.mode = p_mode and p.purpose = 'setup' and p.stripe_price_id = p_setup_price_id and p.active and p.unit_amount = 19900 and p.currency = 'gbp' and p.recurring_interval is null)
-     or not exists (select 1 from public.wm_offer_prices p where p.mode = p_mode and p.purpose = 'monthly' and p.stripe_price_id = p_monthly_price_id and p.active and p.unit_amount = 5000 and p.currency = 'gbp' and p.recurring_interval = 'month') then
-    raise exception 'unapproved Website Machine price' using errcode = '22023';
+  if not exists (select 1 from public.wm_offer_prices p where p.mode = 'test' and p.purpose = 'setup' and p.stripe_price_id = p_setup_price_id and p.active and p.unit_amount = 9900 and p.currency = 'gbp' and p.recurring_interval is null) then
+    raise exception 'unapproved Website Machine £99 test price' using errcode = '22023';
   end if;
   if (p_domain is null) <> (p_domain_challenge is null) then raise exception 'incomplete domain proof' using errcode = '22023'; end if;
   select * into v_order from public.wm_orders where owner_id = v_owner and idempotency_key = p_idempotency_key;
-  if found then return next v_order; return; end if;
+  if found then
+    if v_order.project_id <> p_project_id or v_order.mode <> 'test' or v_order.setup_price_id <> p_setup_price_id or v_order.monthly_price_id is not null or v_order.amount_total <> 9900 then
+      raise exception 'idempotency key is already bound to another order' using errcode = '22023';
+    end if;
+    return next v_order; return;
+  end if;
   perform pg_advisory_xact_lock(hashtextextended(v_owner::text, 0));
   select * into v_order from public.wm_orders where owner_id = v_owner and idempotency_key = p_idempotency_key;
-  if found then return next v_order; return; end if;
+  if found then
+    if v_order.project_id <> p_project_id or v_order.mode <> 'test' or v_order.setup_price_id <> p_setup_price_id or v_order.monthly_price_id is not null or v_order.amount_total <> 9900 then
+      raise exception 'idempotency key is already bound to another order' using errcode = '22023';
+    end if;
+    return next v_order; return;
+  end if;
   select count(*) into v_recent_count from public.wm_orders where owner_id = v_owner and created_at >= now() - interval '1 hour';
   if v_recent_count >= 5 then raise exception 'Website Machine checkout rate limit exceeded' using errcode = 'P0001'; end if;
-  insert into public.wm_orders(project_id, owner_id, idempotency_key, mode, setup_price_id, monthly_price_id, domain, domain_challenge)
-    values (p_project_id, v_owner, p_idempotency_key, p_mode, p_setup_price_id, p_monthly_price_id, p_domain, p_domain_challenge)
+  insert into public.wm_orders(project_id, owner_id, idempotency_key, mode, setup_price_id, monthly_price_id, amount_total, domain, domain_challenge)
+    values (p_project_id, v_owner, p_idempotency_key, 'test', p_setup_price_id, null, 9900, p_domain, p_domain_challenge)
     on conflict (owner_id, idempotency_key) do nothing returning * into v_order;
-  if not found then select * into v_order from public.wm_orders where owner_id = v_owner and idempotency_key = p_idempotency_key; end if;
+  if not found then
+    select * into v_order from public.wm_orders where owner_id = v_owner and idempotency_key = p_idempotency_key;
+    if v_order.project_id <> p_project_id or v_order.mode <> 'test' or v_order.setup_price_id <> p_setup_price_id or v_order.monthly_price_id is not null or v_order.amount_total <> 9900 then
+      raise exception 'idempotency key is already bound to another order' using errcode = '22023';
+    end if;
+  end if;
   return next v_order;
 end;
 $$;
@@ -151,7 +203,7 @@ create or replace function public.wm_get_payment_order(p_order_id uuid, p_mode t
 returns jsonb language plpgsql security definer set search_path = '' as $$
 declare v_order public.wm_orders; v_project public.wm_projects;
 begin
-  if p_mode not in ('test', 'live') or not wm_internal.verify_hmac(p_mode || E'\nget_order:' || p_order_id::text, p_signature) then raise exception 'unauthorized' using errcode = '42501'; end if;
+  if p_mode is distinct from 'test' or not wm_internal.verify_hmac(p_mode || E'\nget_order:' || p_order_id::text, p_signature) then raise exception 'unauthorized' using errcode = '42501'; end if;
   select * into v_order from public.wm_orders where id = p_order_id;
   if not found or v_order.mode <> p_mode then return null; end if;
   select * into v_project from public.wm_projects where id = v_order.project_id;
@@ -176,7 +228,7 @@ begin
   v_message := p_mode || E'\n' || p_event_id || E'\n' || p_session_id || E'\n' || p_project_id::text || E'\n' || p_amount_total::text || E'\n' || lower(p_currency);
   if not wm_internal.verify_hmac(v_message, p_signature) then raise exception 'unauthorized' using errcode = '42501'; end if;
   select * into v_order from public.wm_orders where id = p_order_id for update;
-  if v_order.mode <> p_mode or v_order.project_id <> p_project_id or v_order.checkout_session_id <> p_session_id or v_order.amount_total <> p_amount_total or v_order.currency <> lower(p_currency) then raise exception 'payment does not match order' using errcode = '22023'; end if;
+  if p_mode is distinct from 'test' or v_order.mode <> 'test' or v_order.project_id <> p_project_id or v_order.checkout_session_id <> p_session_id or v_order.amount_total <> 9900 or p_amount_total <> 9900 or v_order.currency <> lower(p_currency) or lower(p_currency) <> 'gbp' then raise exception 'payment does not match £99 test order' using errcode = '22023'; end if;
   if exists (select 1 from public.wm_payment_events e where e.event_id = p_event_id and (e.order_id <> p_order_id or e.checkout_session_id <> p_session_id)) then
     raise exception 'Stripe event already belongs to another order' using errcode = '23505';
   end if;
@@ -196,7 +248,7 @@ begin
   v_message := p_mode || E'\n' || p_project_id::text || E'\n' || p_owner_id::text || E'\n' || p_site_id || E'\n' || p_site_name || E'\n' || coalesce(p_custom_domain, '');
   if not wm_internal.verify_hmac(v_message, p_signature) then raise exception 'unauthorized' using errcode = '42501'; end if;
   if p_site_name <> ('wm-' || replace(p_project_id::text, '-', '')) then raise exception 'invalid isolated site name' using errcode = '22023'; end if;
-  if p_mode not in ('test', 'live') or not exists (select 1 from public.wm_orders o where o.project_id = p_project_id and o.owner_id = p_owner_id and o.mode = p_mode and o.status in ('paid', 'delivering', 'delivered', 'failed') and o.domain is not distinct from p_custom_domain) then raise exception 'paid order required' using errcode = '42501'; end if;
+  if p_mode is distinct from 'test' or not exists (select 1 from public.wm_orders o where o.project_id = p_project_id and o.owner_id = p_owner_id and o.mode = 'test' and o.status in ('paid', 'delivering', 'delivered', 'failed') and o.domain is not distinct from p_custom_domain) then raise exception 'paid test order required' using errcode = '42501'; end if;
   insert into public.wm_customer_sites(project_id, owner_id, site_id, site_name, custom_domain, site_url)
     values (p_project_id, p_owner_id, p_site_id, p_site_name, p_custom_domain, 'https://' || p_site_name || '.netlify.app')
     on conflict (project_id) do update set updated_at = now()
@@ -213,7 +265,7 @@ declare v_message text; v_site public.wm_customer_sites;
 begin
   v_message := p_mode || E'\n' || p_project_id::text || E'\n' || p_owner_id::text || E'\n' || p_deploy_id || E'\n' || coalesce(p_previous_deploy_id, '') || E'\n' || p_site_url || E'\n' || p_verified_deploy_url;
   if not wm_internal.verify_hmac(v_message, p_signature) then raise exception 'unauthorized' using errcode = '42501'; end if;
-  if p_mode not in ('test', 'live') then raise exception 'invalid payment mode' using errcode = '22023'; end if;
+  if p_mode is distinct from 'test' then raise exception 'live payment fulfillment is disabled' using errcode = '22023'; end if;
   update public.wm_customer_sites set
     previous_deploy_ids = case when current_deploy_id is not null and current_deploy_id <> p_deploy_id then array_prepend(current_deploy_id, previous_deploy_ids) else previous_deploy_ids end,
     current_deploy_id = p_deploy_id, site_url = p_site_url, verified_deploy_url = p_verified_deploy_url, status = 'delivered', updated_at = now()

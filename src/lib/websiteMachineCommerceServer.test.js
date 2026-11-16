@@ -15,17 +15,23 @@ test('runtime configuration is explicitly split between staging and production',
   assert.equal(getWebsiteMachineConfig({ WM_STAGING_SUPABASE_URL: 'https://attacker.supabase.co', WM_STAGING_SUPABASE_PUBLISHABLE_KEY: 'key' }), null)
 })
 
-test('production checkout fails closed rather than falling back to staging secrets', async () => {
+test('production checkout remains disabled even when production commerce values are present', async () => {
+  let externalCalls = 0
   const handler = createWebsiteMachineCheckoutHandler({ env: {
     WM_RUNTIME_ENV: 'production', WM_PRODUCTION_SUPABASE_URL: supabase,
     WM_PRODUCTION_SUPABASE_PUBLISHABLE_KEY: 'production-publishable', WM_PRODUCTION_PUBLIC_URL: 'https://nonstopai.netlify.app',
+    WM_PRODUCTION_STRIPE_SECRET_KEY: 'sk_live_must_not_be_used', WM_PRODUCTION_STRIPE_WEBHOOK_SECRET: 'whsec_live_must_not_be_used',
+    WM_PRODUCTION_STRIPE_PRICE_ID: 'price_live_offer', WM_PRODUCTION_PAYMENT_RPC_SECRET: 'p'.repeat(40),
+    WM_PRODUCTION_NETLIFY_CUSTOMER_TOKEN: 'production-netlify-token', WM_PRODUCTION_NETLIFY_ACCOUNT_SLUG: 'production-team',
+    WM_PRODUCTION_EMAIL_API_KEY: 'email-key', WM_PRODUCTION_DELIVERY_FROM_EMAIL: 'sites@example.test',
     WM_STAGING_STRIPE_SECRET_KEY: 'sk_test_staging', WM_STAGING_STRIPE_WEBHOOK_SECRET: 'whsec_staging',
-    WM_STAGING_STRIPE_SETUP_PRICE_ID: 'price_test_setup', WM_STAGING_STRIPE_MONTHLY_PRICE_ID: 'price_test_monthly',
-    WM_STAGING_PAYMENT_RPC_SECRET: 's'.repeat(40), WM_STAGING_NETLIFY_CUSTOMER_TOKEN: 'staging-netlify-token',
-  } })
+    WM_STAGING_STRIPE_PRICE_ID: 'price_test_offer', WM_STAGING_PAYMENT_RPC_SECRET: 's'.repeat(40),
+    WM_STAGING_NETLIFY_CUSTOMER_TOKEN: 'staging-netlify-token',
+  }, fetchImpl: async () => { externalCalls += 1; throw new Error('production handler must not call external services') } })
   const response = await handler({ httpMethod: 'POST' })
   assert.equal(response.statusCode, 503)
   assert.match(response.body, /not fully configured/)
+  assert.equal(externalCalls, 0)
 })
 
 test('staging webhook stays disabled until a dedicated Netlify account is configured', async () => {

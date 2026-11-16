@@ -63,6 +63,22 @@ test('checkout rejects existing Stripe products that do not match Website Machin
   assert.match(JSON.parse(response.body).error, /£99/)
 })
 
+test('checkout rejects live-mode credentials and flags before contacting Stripe or storage', async () => {
+  let calls = 0
+  const makeHandler = (env) => createWebsiteMachineCheckoutApi({
+    env,
+    verifyUser: async () => { calls += 1; return { id: ownerId } },
+    loadOwnedProject: async () => { calls += 1; return { id: projectId, owner_id: ownerId } },
+    fetchImpl: async () => { calls += 1; throw new Error('must reject before external request') },
+  })
+  const event = { httpMethod: 'POST', body: JSON.stringify({ projectId, idempotencyKey: 'live-checkout-test-001' }) }
+  const liveKey = await makeHandler({ WM_STRIPE_SECRET_KEY: 'sk_live_never_use', WM_STRIPE_PRICE_ID: setupPriceId })(event)
+  const liveFlag = await makeHandler({ WM_STRIPE_SECRET_KEY: apiKey, WM_STRIPE_PRICE_ID: setupPriceId, WM_STRIPE_LIVEMODE: 'true' })(event)
+  assert.equal(liveKey.statusCode, 503)
+  assert.equal(liveFlag.statusCode, 503)
+  assert.equal(calls, 0)
+})
+
 test('checkout uses authenticated project ownership and creates Stripe-hosted session with exact prices', async () => {
   const calls = []
   let savedSession
