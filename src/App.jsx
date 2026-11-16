@@ -10,6 +10,7 @@ import Welcome from './pages/Welcome.jsx'
 import NotFound from './pages/NotFound.jsx'
 import ConsentBanner from './components/ConsentBanner.jsx'
 import { VERTICALS } from './config/verticals/index.js'
+import WebsiteMachine from './pages/WebsiteMachine.jsx'
 
 export default function App() {
   const location = useLocation()
@@ -25,6 +26,9 @@ export default function App() {
     <Routes>
       {/* Platform homepage - industry picker renders from the registry */}
       <Route path="/" element={<Home />} />
+
+      {/* Local Website Machine prototype */}
+      <Route path="/website-machine" element={<WebsiteMachine />} />
 
       {/* One route per registered vertical — new verticals appear here
           automatically when added to the registry. */}
