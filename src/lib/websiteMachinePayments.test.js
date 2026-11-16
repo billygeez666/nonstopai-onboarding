@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { createHmac } from 'node:crypto'
-import { createStripeWebsiteMachineWebhook, createWebsiteMachineCheckoutApi, isPaidWebsiteMachineSession, paymentRpcSignature, verifyStripeWebhookSignature } from './websiteMachinePayments.js'
+import { createStripeWebsiteMachineWebhook, createWebsiteMachineCheckoutApi, isPaidWebsiteMachineSession, isStripeTestSecretKey, paymentRpcSignature, verifyStripeWebhookSignature } from './websiteMachinePayments.js'
 import { createWebsiteMachineDeliveryEmail } from './websiteMachineEmail.js'
 
 const ownerId = 'd3cbfcf4-7cb8-4f63-a20d-73d963a88791'
@@ -78,6 +78,21 @@ test('checkout rejects live-mode credentials and flags before contacting Stripe 
   assert.equal(liveKey.statusCode, 503)
   assert.equal(liveFlag.statusCode, 503)
   assert.equal(calls, 0)
+})
+
+test('restricted Stripe test keys are accepted while live restricted keys are rejected', async () => {
+  assert.equal(isStripeTestSecretKey('rk_test_restricted_fixture'), true)
+  assert.equal(isStripeTestSecretKey('sk_test_fixture'), true)
+  assert.equal(isStripeTestSecretKey('rk_live_fixture'), false)
+  assert.equal(isStripeTestSecretKey('sk_live_fixture'), false)
+  let externalCalls = 0
+  const checkout = createWebsiteMachineCheckoutApi({
+    env: { WM_STRIPE_SECRET_KEY: 'rk_test_restricted_fixture', WM_STRIPE_PRICE_ID: setupPriceId },
+    fetchImpl: async () => { externalCalls += 1; throw new Error('authentication must stop before Stripe') },
+  })
+  const response = await checkout({ httpMethod: 'POST', headers: {}, body: '{}' })
+  assert.equal(response.statusCode, 401)
+  assert.equal(externalCalls, 0)
 })
 
 test('checkout uses authenticated project ownership and creates Stripe-hosted session with exact prices', async () => {

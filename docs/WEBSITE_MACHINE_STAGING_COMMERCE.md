@@ -12,7 +12,7 @@ Create a random 32-byte-or-longer HMAC value outside the repository. Store the s
 
 In Stripe **test mode**, create a Website Machine product and a **one-time** GBP price of £99. Do not attach a recurring price. The product name should include “Website” and must not refer to the AI Receptionist. Use a restricted test API key that can read products/prices and create Checkout Sessions; never use an `sk_live_` key.
 
-Set `WM_STAGING_STRIPE_SECRET_KEY` and `WM_STAGING_STRIPE_PRICE_ID` in Netlify Functions. In Stripe test mode, add webhook endpoint `https://bendarus.netlify.app/.netlify/functions/website-machine-stripe-webhook` for `checkout.session.completed` and `checkout.session.async_payment_succeeded`; set its signing secret as `WM_STAGING_STRIPE_WEBHOOK_SECRET`. Once the migration has been applied and the Stripe test price is verified, replace the inactive pending test offer row’s price/product IDs and set only that test setup row active. Checkout independently re-reads Stripe and rejects any amount, currency, product, active-state, or recurring mismatch.
+Set `WM_STAGING_STRIPE_SECRET_KEY` and `WM_STAGING_STRIPE_PRICE_ID` in Netlify Functions. The secret key may be a restricted `rk_test_…` key or a standard `sk_test_…` key; live-mode key prefixes are rejected. In Stripe test mode, add webhook endpoint `https://bendarus.netlify.app/.netlify/functions/website-machine-stripe-webhook` for `checkout.session.completed` and `checkout.session.async_payment_succeeded`; set its signing secret as `WM_STAGING_STRIPE_WEBHOOK_SECRET`. Once the migration has been applied and the Stripe test price is verified, replace the inactive pending test offer row’s price/product IDs and set only that test setup row active. Checkout independently re-reads Stripe and rejects any amount, currency, product, active-state, or recurring mismatch.
 
 ## 3. Isolated customer publishing
 
@@ -31,7 +31,7 @@ Set these remaining values, all in the `bendarus` site’s **Functions** scope:
 - `WM_STAGING_SUPABASE_URL=https://lqywsbqctoydtdqvjzzw.supabase.co`
 - `WM_STAGING_SUPABASE_PUBLISHABLE_KEY` (publishable/anon key only)
 - `WM_STAGING_PAYMENT_RPC_SECRET` (same random value in Supabase Vault)
-- `WM_STAGING_STRIPE_SECRET_KEY` (`sk_test_…` restricted key)
+- `WM_STAGING_STRIPE_SECRET_KEY` (`rk_test_…` restricted key or `sk_test_…`)
 - `WM_STAGING_STRIPE_WEBHOOK_SECRET` (`whsec_…` test endpoint secret)
 - `WM_STAGING_STRIPE_PRICE_ID` (verified one-time GBP 9900 price)
 - `WM_STAGING_NETLIFY_CUSTOMER_TOKEN` (dedicated `WEBSITE MACHINE` team identity)

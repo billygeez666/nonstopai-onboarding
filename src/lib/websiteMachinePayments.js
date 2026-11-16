@@ -4,6 +4,7 @@ import { verifyDomainChallenge } from './websiteMachinePublishing.js'
 const API = 'https://api.stripe.com/v1'
 const WEBSITE_MACHINE_ONE_OFF_AMOUNT = 9900
 const isId = (value) => typeof value === 'string' && /^[A-Za-z0-9_-]{8,120}$/.test(value)
+export const isStripeTestSecretKey = (value) => typeof value === 'string' && (value.startsWith('sk_test_') || value.startsWith('rk_test_'))
 
 export function verifyStripeWebhookSignature(rawBody, signatureHeader, secret, now = Date.now(), toleranceSeconds = 300) {
   if (!Buffer.isBuffer(rawBody) || typeof secret !== 'string' || secret.length < 16 || typeof signatureHeader !== 'string') return null
@@ -48,7 +49,7 @@ export function createWebsiteMachineCheckoutApi({
     if (event.httpMethod !== 'POST') return { statusCode: 405, body: 'Method not allowed.' }
     if (Buffer.byteLength(event.body || '') > 20_000) return { statusCode: 413, body: JSON.stringify({ error: 'Request is too large.' }) }
     const liveMode = env.WM_STRIPE_LIVEMODE === 'true'
-    if (liveMode || !env.WM_STRIPE_SECRET_KEY?.startsWith('sk_test_') || !env.WM_STRIPE_PRICE_ID) {
+    if (liveMode || !isStripeTestSecretKey(env.WM_STRIPE_SECRET_KEY) || !env.WM_STRIPE_PRICE_ID) {
       return { statusCode: 503, body: JSON.stringify({ error: 'Website Machine one-off test checkout is not configured.' }) }
     }
     try {
@@ -124,7 +125,7 @@ export function createStripeWebsiteMachineWebhook({
 } = {}) {
   return async (event) => {
     if (event.httpMethod !== 'POST') return { statusCode: 405, body: 'Method not allowed.' }
-    if (!env.WM_STRIPE_SECRET_KEY?.startsWith('sk_test_') || env.WM_STRIPE_LIVEMODE === 'true' || !env.WM_STRIPE_WEBHOOK_SECRET || typeof loadOrder !== 'function' || typeof confirmPaidOrder !== 'function' || !publisher || typeof recordDeployment !== 'function' || typeof sendDeliveryEmail !== 'function') {
+    if (!isStripeTestSecretKey(env.WM_STRIPE_SECRET_KEY) || env.WM_STRIPE_LIVEMODE === 'true' || !env.WM_STRIPE_WEBHOOK_SECRET || typeof loadOrder !== 'function' || typeof confirmPaidOrder !== 'function' || !publisher || typeof recordDeployment !== 'function' || typeof sendDeliveryEmail !== 'function') {
       return { statusCode: 503, body: 'Website Machine payment fulfillment is not configured.' }
     }
     try {

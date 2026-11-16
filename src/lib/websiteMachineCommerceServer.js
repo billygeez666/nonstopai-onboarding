@@ -1,6 +1,6 @@
 import { createHmac, timingSafeEqual } from 'node:crypto'
 import { createDomainChallenge, createNetlifyCustomerPublisher } from './websiteMachinePublishing.js'
-import { createStripeWebsiteMachineWebhook, createWebsiteMachineCheckoutApi } from './websiteMachinePayments.js'
+import { createStripeWebsiteMachineWebhook, createWebsiteMachineCheckoutApi, isStripeTestSecretKey } from './websiteMachinePayments.js'
 import { createWebsiteMachineDeliveryEmail } from './websiteMachineEmail.js'
 import { getWebsiteMachineConfig } from './websiteMachineServer.js'
 
@@ -27,7 +27,7 @@ function runtime(env) {
 
 function stagingCommerceReady(config) {
   return config?.mode === 'staging' && config.publicUrl === 'https://bendarus.netlify.app' &&
-    config.stripeSecret?.startsWith('sk_test_') && config.stripeWebhookSecret?.startsWith('whsec_') && config.stripePrice?.startsWith('price_') &&
+    isStripeTestSecretKey(config.stripeSecret) && config.stripeWebhookSecret?.startsWith('whsec_') && config.stripePrice?.startsWith('price_') &&
     typeof config.rpcSecret === 'string' && config.rpcSecret.length >= 32 && config.netlifyToken &&
     config.netlifyAccountSlug === 'website-machine' && config.deliveryEmailApiKey &&
     /^[^\s@<>"']+@[^\s@<>"']+\.[^\s@<>"']{2,}$/.test(config.deliveryFromEmail || '')
@@ -60,7 +60,7 @@ function inspectStagingEnvironment(env) {
   const publishableKey = selectedEnv(env, 'WM_STAGING_SUPABASE_PUBLISHABLE_KEY', 'WM_SUPABASE_PUBLISHABLE_KEY')
   requireValue(publishableKey.name, publishableKey.value)
   const stripeSecret = selectedEnv(env, 'WM_STAGING_STRIPE_SECRET_KEY', 'STRIPE_SECRET_KEY')
-  requireMatch(stripeSecret.name, stripeSecret.value, (value) => value.startsWith('sk_test_'))
+  requireMatch(stripeSecret.name, stripeSecret.value, isStripeTestSecretKey)
   const webhookSecret = selectedEnv(env, 'WM_STAGING_STRIPE_WEBHOOK_SECRET', 'STRIPE_WEBHOOK_SECRET')
   requireMatch(webhookSecret.name, webhookSecret.value, (value) => value.startsWith('whsec_'))
   const stripePrice = selectedEnv(env, 'WM_STAGING_STRIPE_PRICE_ID', 'STRIPE_PRICE_ID')
@@ -116,7 +116,7 @@ export function createWebsiteMachineReadinessHandler({ env = process.env, fetchI
         } else if (response.ok) result.checks.paymentRpcSecretMatchesSupabase = true
       } catch {}
     }
-    if (inspected.stripeSecret.value.startsWith('sk_test_') && inspected.stripePrice.value.startsWith('price_')) {
+    if (isStripeTestSecretKey(inspected.stripeSecret.value) && inspected.stripePrice.value.startsWith('price_')) {
       try {
         const response = await fetchImpl(`https://api.stripe.com/v1/prices/${encodeURIComponent(inspected.stripePrice.value)}?expand%5B%5D=product`, {
           headers: { authorization: `Bearer ${inspected.stripeSecret.value}` },
