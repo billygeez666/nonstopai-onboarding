@@ -11,8 +11,10 @@ const example = {
   industry: 'Independent garage',
   location: 'Leeds',
   websiteUrl: '',
+  verifiedServices: 'MOT testing\nVehicle servicing\nVehicle repairs',
   verifiedInfo: 'MOT testing\nVehicle servicing\nVehicle repairs\nLocated in Kirkstall, Leeds',
 }
+const initialContent = generateWebsiteContent(example).content
 
 const fields = [
   ['businessName', 'Business name'], ['industry', 'Industry'], ['location', 'Location'],
@@ -21,7 +23,8 @@ const fields = [
 export default function WebsiteMachine() {
   const [input, setInput] = useState(example)
   const [validation, setValidation] = useState({})
-  const [content, setContent] = useState(() => generateWebsiteContent(example).content)
+  const [content, setContent] = useState(initialContent)
+  const [previewDocument, setPreviewDocument] = useState(() => renderStaticWebsite(initialContent, { editable: true }))
   const [view, setView] = useState('desktop')
   const [source, setSource] = useState({ label: '', url: '', findings: '' })
   const [project, setProject] = useState(null)
@@ -40,8 +43,7 @@ export default function WebsiteMachine() {
   const paymentNotice = new URLSearchParams(window.location.search).get('payment')
   const returnProjectId = new URLSearchParams(window.location.search).get('project_id')
   const createKey = useRef('')
-  const isSample = content.facts.join('\n') === example.verifiedInfo
-  const facts = content.facts
+  const previewFrame = useRef(null)
 
   useEffect(() => {
     if (paymentNotice !== 'processing' || !returnProjectId || !session) return undefined
@@ -70,8 +72,37 @@ export default function WebsiteMachine() {
     setInput((current) => ({ ...current, [event.target.name]: event.target.value }))
   }
 
-  function updateCopy(key, value, max = 300) {
-    setContent((current) => ({ ...current, [key]: sanitizeEditableText(value, max) }))
+  function handlePreviewLoad(event) {
+    const document = event.currentTarget.contentDocument
+    if (!document) return
+    document.addEventListener('input', (inputEvent) => {
+      const target = inputEvent.target.closest('[data-wm-edit]')
+      if (!target) return
+      const key = target.dataset.wmEdit
+      const max = Number(target.dataset.wmMax) || 300
+      const text = sanitizeEditableText(target.textContent, max)
+      if (target.textContent !== text || target.children.length) target.textContent = text
+      if (['heroTitle', 'heroDescription', 'aboutTitle', 'aboutDescription'].includes(key)) {
+        setContent((current) => ({ ...current, [key]: text }))
+      }
+    })
+    document.addEventListener('paste', (pasteEvent) => {
+      const editable = pasteEvent.target.closest('[data-wm-edit]')
+      if (!editable) return
+      pasteEvent.preventDefault()
+      const selection = document.getSelection()
+      if (!selection?.rangeCount) return
+      const range = selection.getRangeAt(0)
+      if (!editable.contains(range.commonAncestorContainer)) return
+      range.deleteContents()
+      const text = document.createTextNode(pasteEvent.clipboardData?.getData('text/plain') || '')
+      range.insertNode(text)
+      range.setStartAfter(text)
+      range.collapse(true)
+      selection.removeAllRanges()
+      selection.addRange(range)
+      pasteEvent.target.dispatchEvent(new document.defaultView.Event('input', { bubbles: true }))
+    })
   }
 
   function downloadSite() {
@@ -91,7 +122,9 @@ export default function WebsiteMachine() {
     setValidation(checked.errors)
     if (!checked.ok) return
     setInput(checked.value)
-    setContent(generateWebsiteContent(checked.value).content)
+    const next = generateWebsiteContent(checked.value).content
+    setContent(next)
+    setPreviewDocument(renderStaticWebsite(next, { editable: true }))
   }
 
   async function signIn(event) {
@@ -282,6 +315,12 @@ export default function WebsiteMachine() {
               <textarea aria-label="Verified research findings" rows="3" maxLength={800} placeholder="Findings verified from this source" value={source.findings} onChange={(event) => setSource({ ...source, findings: event.target.value })} />
             </details>
             <label className="wm-field">
+              <span>Verified services <b>OPTIONAL · ONE SERVICE PER LINE</b></span>
+              <textarea name="verifiedServices" rows="3" maxLength={800} value={input.verifiedServices || ''} onChange={updateInput} aria-invalid={Boolean(validation.verifiedServices)} />
+              {validation.verifiedServices && <small className="wm-error">{validation.verifiedServices}</small>}
+              <small>Only list services the business has confirmed. These appear as service cards.</small>
+            </label>
+            <label className="wm-field">
               <span>Verified business information <b>REQUIRED · ONE FACT PER LINE</b></span>
               <textarea name="verifiedInfo" rows="5" maxLength={1200} value={input.verifiedInfo} onChange={updateInput} aria-invalid={Boolean(validation.verifiedInfo)} />
               {validation.verifiedInfo && <small className="wm-error">{validation.verifiedInfo}</small>}
@@ -301,30 +340,9 @@ export default function WebsiteMachine() {
           </div>
           <div className={`wm-browser ${view}`}>
             <div className="wm-browser-bar"><span className="wm-dots"><i /><i /><i /></span><span className="wm-address">local preview <b>•</b> {content.businessName.toLowerCase().replace(/[^a-z0-9]+/g, '-')}</span><span className="wm-preview-label">DRAFT</span></div>
-            <article className="wm-site">
-              <nav className="wm-site-nav"><a className="wm-site-logo" href="#top">{content.businessName}</a><a href="#verified">The business <span>↗</span></a></nav>
-              <section className="wm-site-hero" id="top">
-                <div className="wm-hero-orbit" aria-hidden="true"><div /><div /><div /></div>
-                <p className="wm-site-overline"><i /> {content.industry} <span>·</span> {content.location}</p>
-                <span className="wm-generated-badge">GENERATED MARKETING COPY · EDITABLE</span>
-                <Editable as="h1" value={content.heroTitle} onChange={(value) => updateCopy('heroTitle', value, 120)} />
-                <Editable as="p" className="wm-site-lead" value={content.heroDescription} onChange={(value) => updateCopy('heroDescription', value, 240)} />
-                <a className="wm-site-cta" href="#verified">{content.ctaLabel} <span>↗</span></a>
-                <div className="wm-hero-foot"><span>INFORMATION SUPPLIED FOR THIS PREVIEW</span><span>01 — 03</span></div>
-              </section>
-              <section className="wm-site-about" id="verified">
-                <div className="wm-about-index">A / ABOUT</div>
-                <div className="wm-about-copy"><span className="wm-fact-badge"><i /> {isSample ? 'SAMPLE FACTS · FICTIONAL BUSINESS' : 'USER-PROVIDED FACTS · VERIFY BEFORE PUBLISH'}</span>
-                  <span className="wm-generated-badge">GENERATED MARKETING COPY · EDITABLE</span>
-                  <Editable as="h2" value={content.aboutTitle} onChange={(value) => updateCopy('aboutTitle', value, 120)} />
-                  <Editable as="p" value={content.aboutDescription} onChange={(value) => updateCopy('aboutDescription', value, 300)} />
-                  <ul className="wm-facts">{facts.map((fact, index) => <li key={`${fact}-${index}`}><span>0{index + 1}</span>{fact}</li>)}</ul>
-                </div>
-              </section>
-              <footer className="wm-site-footer"><a href="#top">{content.businessName}</a><span>Browser draft · Customer site not published</span>{content.websiteUrl && <a className="wm-source-link" href={content.websiteUrl} target="_blank" rel="noreferrer">Current website ↗</a>}</footer>
-            </article>
+            <iframe ref={previewFrame} title={`Website preview for ${content.businessName}`} sandbox="allow-same-origin allow-popups" srcDoc={previewDocument} onLoad={handlePreviewLoad} />
           </div>
-          <div className="wm-preview-actions"><p className="wm-preview-hint"><span>↗</span> Click any text in the preview to edit it. Changes are local to this draft.</p><button type="button" className="wm-export" onClick={downloadSite}>Download draft HTML ↓</button></div>
+          <div className="wm-preview-actions"><p className="wm-preview-hint"><span>↗</span> Click generated copy in the preview to edit it. Changes are local to this draft.</p><button type="button" className="wm-export" onClick={downloadSite}>Download draft HTML ↓</button></div>
           <div className="wm-project-actions">
             <button type="button" onClick={() => projectAction('create')} disabled={busy || Boolean(project) || !session}>{project ? 'Project saved in this session' : 'Save project'}</button>
             <button type="button" onClick={() => projectAction('save')} disabled={busy || !project || !session}>Save edits</button>
@@ -352,8 +370,4 @@ export default function WebsiteMachine() {
       <footer className="wm-page-footer">WEBSITE MACHINE <span>·</span> STRUCTURED CONTENT <span>·</span> CONTROLLED TEMPLATE <span>·</span> NO CUSTOMER SITE PUBLISHED</footer>
     </main>
   )
-}
-
-function Editable({ as: Tag, value, onChange, className = '' }) {
-  return <textarea className={`wm-editable wm-edit-${Tag} ${className}`} aria-label={`Edit generated ${Tag} text`} rows={2} spellCheck value={value} onChange={(event) => onChange(event.target.value)} />
 }

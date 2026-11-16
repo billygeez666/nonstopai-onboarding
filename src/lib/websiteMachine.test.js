@@ -7,6 +7,7 @@ const garage = {
   industry: 'Independent garage',
   location: 'Leeds',
   websiteUrl: '',
+  verifiedServices: 'MOT testing\nVehicle servicing',
   verifiedInfo: 'MOT testing\nVehicle servicing\nLocated in Kirkstall',
 }
 
@@ -15,12 +16,14 @@ test('validates required fields and generates structured copy from supplied fact
   assert.equal(result.ok, true)
   assert.equal(result.content.heroTitle, 'Northstar Motor Works in Leeds')
   assert.deepEqual(result.content.facts, ['MOT testing', 'Vehicle servicing', 'Located in Kirkstall'])
-  assert.match(result.content.heroDescription, /independent garage · Leeds/i)
-  assert.match(result.content.aboutDescription, /business information provided/i)
+  assert.deepEqual(result.content.services, ['MOT testing', 'Vehicle servicing'])
+  assert.match(result.content.heroDescription, /an independent garage in Leeds/i)
+  assert.match(result.content.aboutDescription, /details shared by the business/i)
   assert.equal('reviews' in result.content, false)
   assert.equal('openingHours' in result.content, false)
   assert.equal('qualifications' in result.content, false)
   assert.equal('phone' in result.content, false)
+  assert.equal(result.content.ctaLabel, 'Contact the business')
 })
 
 test('rejects missing required information', () => {
@@ -43,6 +46,43 @@ test('caps lengths, rejects excessive fact counts, and sanitizes edited copy', (
   assert.ok(result.errors.verifiedInfo)
   assert.equal(sanitizeEditableText('  safe\u0000 copy  '), 'safe copy')
   assert.equal(sanitizeEditableText('x'.repeat(400)).length, 300)
+  assert.equal(validateBusinessInput({ ...garage, verifiedServices: Array(9).fill('Service').join('\n') }).errors.verifiedServices, 'Use 8 verified services or fewer.')
+})
+
+test('renders a responsive one-page business site with industry art direction and explicit contact gaps', () => {
+  const content = generateWebsiteContent(garage).content
+  const html = renderStaticWebsite(content)
+  assert.match(html, /wm-theme-garage/)
+  assert.match(html, /class="wm-hero"/)
+  assert.match(html, /class="wm-services"/)
+  assert.match(html, /What the business offers/)
+  assert.match(html, /wm-contact/)
+  assert.match(html, /No contact details were supplied/)
+  assert.equal((html.match(/MOT testing/g) || []).length, 1)
+  assert.match(html, /@media\(max-width:760px\)/)
+  assert.match(html, /@media\(max-width:440px\)/)
+  assert.match(renderStaticWebsite(content), /<body class="wm-theme-garage">/)
+  const variants = [
+    ['Hair salon', 'studio'], ['Restaurant', 'hospitality'],
+    ['Garden maintenance', 'outdoors'], ['Accountant', 'professional'],
+  ]
+  for (const [industry, theme] of variants) assert.match(renderStaticWebsite({ ...content, industry }), new RegExp(`<body class="wm-theme-${theme}">`))
+  assert.doesNotMatch(html, /customer reviews|qualified|opening hours|telephone number/i)
+})
+
+test('preview and static export share the same controlled template', () => {
+  const content = generateWebsiteContent(garage).content
+  const preview = renderStaticWebsite(content, { editable: true })
+  const exported = renderStaticWebsite(content)
+  for (const section of ['wm-header', 'wm-hero', 'wm-services', 'wm-about', 'wm-contact', 'wm-footer']) {
+    const markup = new RegExp(`class="[^"]*\\b${section}\\b[^"]*"`)
+    assert.match(preview, markup, section)
+    assert.match(exported, markup, section)
+  }
+  assert.match(preview, /data-wm-edit="heroTitle"/)
+  assert.doesNotMatch(exported, /\scontenteditable=/)
+  assert.doesNotMatch(preview, /<script>/i)
+  assert.equal(preview.replace(/ data-wm-edit="[^"]+" data-wm-max="\d+" contenteditable="true" role="textbox" aria-multiline="true" aria-label="Edit generated website copy" spellcheck="true"/g, ''), exported)
 })
 
 test('exports a fixed, escaped static template without executing supplied markup', () => {
@@ -50,8 +90,9 @@ test('exports a fixed, escaped static template without executing supplied markup
   const html = renderStaticWebsite(result.content)
   assert.match(html, /&lt;script&gt;alert\(&quot;x&quot;\)&lt;\/script&gt;/)
   assert.doesNotMatch(html, /<script>/i)
-  assert.match(html, /name="robots" content="noindex,nofollow"/)
-  assert.match(html, /@media\(max-width:600px\)/)
+  assert.doesNotMatch(html, /name="robots" content="noindex,nofollow"/)
+  assert.match(renderStaticWebsite(result.content, { noIndex: true }), /name="robots" content="noindex,nofollow"/)
+  assert.match(html, /@media\(max-width:440px\)/)
 })
 
 test('accepts only a bounded structured website content shape for server persistence', () => {
@@ -59,5 +100,8 @@ test('accepts only a bounded structured website content shape for server persist
   assert.equal(sanitizeWebsiteContent(content).ok, true)
   assert.equal(sanitizeWebsiteContent({ ...content, facts: [42] }).ok, false)
   assert.equal(sanitizeWebsiteContent({ ...content, facts: Array(13).fill('fact') }).ok, false)
+  assert.equal(sanitizeWebsiteContent({ ...content, services: Array(9).fill('service') }).ok, false)
+  assert.equal(sanitizeWebsiteContent({ ...content, services: ['<script>alert(1)</script>'] }).content.services[0], '<script>alert(1)</script>')
+  assert.match(renderStaticWebsite({ ...content, services: ['<script>alert(1)</script>'] }), /&lt;script&gt;alert\(1\)&lt;\/script&gt;/)
   assert.equal(sanitizeWebsiteContent({ ...content, websiteUrl: 'javascript:alert(1)' }).content.websiteUrl, '')
 })

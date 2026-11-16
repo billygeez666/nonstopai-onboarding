@@ -125,6 +125,7 @@ test('public preview serves only a valid database-matched, unexpired token as no
   const response = await handler({ httpMethod: 'GET', rawUrl: `https://nonstopai-staging-preview.netlify.app/.netlify/functions/website-machine-render-preview?id=${project.id}&token=${token}` })
   assert.equal(response.statusCode, 200)
   assert.equal(response.headers['x-robots-tag'], 'noindex, nofollow')
+  assert.match(response.body, /name="robots" content="noindex,nofollow"/)
   assert.equal(rpcBody.p_project_id, project.id)
   assert.equal(rpcBody.p_token_hash.length, 64)
   assert.match(response.body, /Northstar Motor Works/)

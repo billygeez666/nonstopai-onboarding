@@ -168,7 +168,7 @@ export function createRenderPreviewApi({ env = process.env, fetchImpl = fetch } 
       if (!response.ok) throw new Error('Preview read failed')
       const rows = await response.json()
       if (!rows?.length) return { statusCode: 404, headers: { 'cache-control': 'no-store' }, body: 'Preview not found or expired.' }
-      const html = renderStaticWebsite(rows[0].content)
+      const html = renderStaticWebsite(rows[0].content, { noIndex: true })
       return { statusCode: 200, headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store', 'x-robots-tag': 'noindex, nofollow', 'x-content-type-options': 'nosniff', 'referrer-policy': 'no-referrer', 'content-security-policy': "default-src 'none'; style-src 'unsafe-inline'; img-src data: https:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'" }, body: html }
     } catch {
       return { statusCode: 502, headers: { 'cache-control': 'no-store' }, body: 'Preview unavailable.' }
