@@ -11,6 +11,8 @@ const example = {
   industry: 'Independent garage',
   location: 'Leeds',
   websiteUrl: '',
+  verifiedPhone: '',
+  verifiedEmail: '',
   verifiedServices: 'MOT testing\nVehicle servicing\nVehicle repairs',
   verifiedInfo: 'MOT testing\nVehicle servicing\nVehicle repairs\nLocated in Kirkstall, Leeds',
 }
@@ -307,6 +309,18 @@ export default function WebsiteMachine() {
               {validation.websiteUrl && <small className="wm-error">{validation.websiteUrl}</small>}
               <small>Saved as a link only. This prototype does not visit or fetch the address.</small>
             </label>
+            <label className="wm-field">
+              <span>Verified phone <b>OPTIONAL</b></span>
+              <input name="verifiedPhone" type="tel" autoComplete="tel" inputMode="tel" placeholder="+44 20 1234 5678" value={input.verifiedPhone || ''} maxLength={40} onChange={updateInput} aria-invalid={Boolean(validation.verifiedPhone)} />
+              {validation.verifiedPhone && <small className="wm-error">{validation.verifiedPhone}</small>}
+              <small>Used only for a call button when you provide a confirmed number.</small>
+            </label>
+            <label className="wm-field">
+              <span>Verified email <b>OPTIONAL</b></span>
+              <input name="verifiedEmail" type="email" autoComplete="email" placeholder="hello@example.co.uk" value={input.verifiedEmail || ''} maxLength={254} onChange={updateInput} aria-invalid={Boolean(validation.verifiedEmail)} />
+              {validation.verifiedEmail && <small className="wm-error">{validation.verifiedEmail}</small>}
+              <small>Used only for an email button when you provide a confirmed address.</small>
+            </label>
             <details className="wm-research-details">
               <summary>Verified research source <b>OPTIONAL</b></summary>
               <p>Record findings you have checked yourself. This does not fetch or crawl the source URL.</p>
@@ -357,7 +371,7 @@ export default function WebsiteMachine() {
           <section className="wm-checkout-panel" aria-labelledby="wm-delivery-title">
             <span className="wm-step">03 / CUSTOMER DELIVERY</span>
             <h2 id="wm-delivery-title">Make this website yours</h2>
-            <p>£199 one-time setup, then £50/month for hosting, booking and support. The site is created only after Stripe confirms payment.</p>
+            <p>£99 one-time for a single-page website. No recurring charge. Delivery starts only after Stripe confirms payment.</p>
             <label className="wm-field"><span>Custom domain <b>OPTIONAL</b></span><input value={domain} maxLength={253} placeholder="www.yourbusiness.co.uk" onChange={(event) => { setDomain(event.target.value); setDomainChallenge(null); setDomainRecord(null) }} /></label>
             {domain.trim() && <button type="button" onClick={requestDomainChallenge} disabled={busy || !session}>Create DNS ownership check</button>}
             {domainRecord && <div className="wm-domain-record"><b>TXT record · expires {new Date(domainRecord.expiresAt).toLocaleString()}</b><code>{domainRecord.name}</code><code>{domainRecord.value}</code></div>}

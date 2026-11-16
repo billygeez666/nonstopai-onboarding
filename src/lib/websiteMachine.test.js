@@ -7,6 +7,8 @@ const garage = {
   industry: 'Independent garage',
   location: 'Leeds',
   websiteUrl: '',
+  verifiedPhone: '+44 113 555 0100',
+  verifiedEmail: 'hello@northstar.example',
   verifiedServices: 'MOT testing\nVehicle servicing',
   verifiedInfo: 'MOT testing\nVehicle servicing\nLocated in Kirkstall',
 }
@@ -14,16 +16,16 @@ const garage = {
 test('validates required fields and generates structured copy from supplied facts', () => {
   const result = generateWebsiteContent(garage)
   assert.equal(result.ok, true)
-  assert.equal(result.content.heroTitle, 'Northstar Motor Works in Leeds')
+  assert.equal(result.content.heroTitle, 'Northstar Motor Works | MOT testing in Leeds')
   assert.deepEqual(result.content.facts, ['MOT testing', 'Vehicle servicing', 'Located in Kirkstall'])
   assert.deepEqual(result.content.services, ['MOT testing', 'Vehicle servicing'])
-  assert.match(result.content.heroDescription, /an independent garage in Leeds/i)
+  assert.match(result.content.heroDescription, /looking for mot testing in Leeds/i)
   assert.match(result.content.aboutDescription, /details shared by the business/i)
   assert.equal('reviews' in result.content, false)
   assert.equal('openingHours' in result.content, false)
   assert.equal('qualifications' in result.content, false)
   assert.equal('phone' in result.content, false)
-  assert.equal(result.content.ctaLabel, 'Contact the business')
+  assert.equal(result.content.ctaLabel, 'Call the business')
 })
 
 test('rejects missing required information', () => {
@@ -38,6 +40,18 @@ test('normalizes an optional website URL without fetching it', () => {
   assert.equal(result.ok, true)
   assert.equal(result.value.websiteUrl, 'https://northstar.example.co.uk/')
   assert.equal(validateBusinessInput({ ...garage, websiteUrl: 'javascript:alert(1)' }).ok, false)
+})
+
+test('verified contact buttons only render validated business contact details', () => {
+  const content = generateWebsiteContent(garage).content
+  const html = renderStaticWebsite(content)
+  assert.match(html, /href="tel:\+441135550100"/)
+  assert.match(html, /href="mailto:hello@northstar\.example"/)
+  assert.equal(validateBusinessInput({ ...garage, verifiedPhone: 'call-me' }).ok, false)
+  assert.equal(validateBusinessInput({ ...garage, verifiedEmail: 'not-an-email' }).ok, false)
+  const noContact = generateWebsiteContent({ ...garage, verifiedPhone: '', verifiedEmail: '' }).content
+  assert.match(renderStaticWebsite(noContact), /Verified contact details needed before publishing/)
+  assert.doesNotMatch(renderStaticWebsite(noContact), /href="(?:tel:|mailto:)/)
 })
 
 test('caps lengths, rejects excessive fact counts, and sanitizes edited copy', () => {
@@ -56,9 +70,10 @@ test('renders a responsive one-page business site with industry art direction an
   assert.match(html, /class="wm-hero"/)
   assert.match(html, /class="wm-services"/)
   assert.match(html, /What the business offers/)
+  assert.match(html, /Ask Northstar Motor Works in Leeds about mot testing and current availability\./i)
   assert.match(html, /wm-contact/)
-  assert.match(html, /No contact details were supplied/)
-  assert.equal((html.match(/MOT testing/g) || []).length, 1)
+  assert.match(html, /Use one of the verified contact methods supplied by the business/)
+  assert.equal((html.match(/MOT testing/g) || []).length, 2)
   assert.match(html, /@media\(max-width:760px\)/)
   assert.match(html, /@media\(max-width:440px\)/)
   assert.match(renderStaticWebsite(content), /<body class="wm-theme-garage">/)

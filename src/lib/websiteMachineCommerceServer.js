@@ -1,6 +1,7 @@
 import { createHmac } from 'node:crypto'
 import { createDomainChallenge, createNetlifyCustomerPublisher } from './websiteMachinePublishing.js'
 import { createStripeWebsiteMachineWebhook, createWebsiteMachineCheckoutApi } from './websiteMachinePayments.js'
+import { createWebsiteMachineDeliveryEmail } from './websiteMachineEmail.js'
 import { getWebsiteMachineConfig } from './websiteMachineServer.js'
 
 function runtime(env) {
@@ -11,13 +12,22 @@ function runtime(env) {
     ...config,
     stripeSecret: production ? env.WM_PRODUCTION_STRIPE_SECRET_KEY : env.WM_STAGING_STRIPE_SECRET_KEY,
     stripeWebhookSecret: production ? env.WM_PRODUCTION_STRIPE_WEBHOOK_SECRET : env.WM_STAGING_STRIPE_WEBHOOK_SECRET,
-    stripeSetupPrice: production ? env.WM_PRODUCTION_STRIPE_SETUP_PRICE_ID : env.WM_STAGING_STRIPE_SETUP_PRICE_ID,
-    stripeMonthlyPrice: production ? env.WM_PRODUCTION_STRIPE_MONTHLY_PRICE_ID : env.WM_STAGING_STRIPE_MONTHLY_PRICE_ID,
+    stripePrice: production ? env.WM_PRODUCTION_STRIPE_PRICE_ID : env.WM_STAGING_STRIPE_PRICE_ID,
     rpcSecret: production ? env.WM_PRODUCTION_PAYMENT_RPC_SECRET : env.WM_STAGING_PAYMENT_RPC_SECRET,
     netlifyToken: production ? env.WM_PRODUCTION_NETLIFY_CUSTOMER_TOKEN : env.WM_STAGING_NETLIFY_CUSTOMER_TOKEN,
     netlifyAccountSlug: production ? env.WM_PRODUCTION_NETLIFY_ACCOUNT_SLUG : env.WM_STAGING_NETLIFY_ACCOUNT_SLUG,
+    deliveryEmailApiKey: production ? env.WM_PRODUCTION_EMAIL_API_KEY : env.WM_STAGING_EMAIL_API_KEY,
+    deliveryFromEmail: production ? env.WM_PRODUCTION_DELIVERY_FROM_EMAIL : env.WM_STAGING_DELIVERY_FROM_EMAIL,
     liveMode: production,
   }
+}
+
+function stagingCommerceReady(config) {
+  return config?.mode === 'staging' && config.publicUrl === 'https://bendarus.netlify.app' &&
+    config.stripeSecret?.startsWith('sk_test_') && config.stripeWebhookSecret?.startsWith('whsec_') && config.stripePrice?.startsWith('price_') &&
+    typeof config.rpcSecret === 'string' && config.rpcSecret.length >= 32 && config.netlifyToken &&
+    config.netlifyAccountSlug === 'website-machine' && config.deliveryEmailApiKey &&
+    /^[^\s@<>"']+@[^\s@<>"']+\.[^\s@<>"']{2,}$/.test(config.deliveryFromEmail || '')
 }
 
 function signature(message, secret) {
@@ -39,15 +49,14 @@ function createRpc({ baseUrl, publishableKey, fetchImpl }) {
 
 export function createWebsiteMachineCheckoutHandler({ env = process.env, fetchImpl = fetch } = {}) {
   const config = runtime(env)
-  if (!config || !config.stripeSecret || !config.stripeWebhookSecret || !config.stripeSetupPrice || !config.stripeMonthlyPrice || !config.rpcSecret || !config.netlifyToken || !config.netlifyAccountSlug) return async () => ({ statusCode: 503, body: 'Website Machine checkout and delivery are not fully configured.' })
+  if (!stagingCommerceReady(config)) return async () => ({ statusCode: 503, body: 'Website Machine staging checkout and delivery are not fully configured.' })
   const rpc = createRpc({ baseUrl: config.url, publishableKey: config.publishableKey, fetchImpl })
   return createWebsiteMachineCheckoutApi({
     env: {
       ...env,
       WM_STRIPE_SECRET_KEY: config.stripeSecret,
-      WM_STRIPE_SETUP_PRICE_ID: config.stripeSetupPrice,
-      WM_STRIPE_MONTHLY_PRICE_ID: config.stripeMonthlyPrice,
-      WM_STRIPE_LIVEMODE: String(config.liveMode),
+      WM_STRIPE_PRICE_ID: config.stripePrice,
+      WM_STRIPE_LIVEMODE: 'false',
     },
     fetchImpl,
     publicUrl: () => config.publicUrl,
@@ -132,7 +141,7 @@ export function createWebsiteMachineCustomerSiteHandler({ env = process.env, fet
 
 export function createWebsiteMachineStripeWebhookHandler({ env = process.env, fetchImpl = fetch, sleep, maxPolls } = {}) {
   const config = runtime(env)
-  if (!config || !config.stripeSecret || !config.stripeWebhookSecret || !config.stripeSetupPrice || !config.stripeMonthlyPrice || !config.rpcSecret || !config.netlifyToken || !config.netlifyAccountSlug) return async () => ({ statusCode: 503, body: 'Website Machine payment fulfillment is not fully configured.' })
+  if (!stagingCommerceReady(config)) return async () => ({ statusCode: 503, body: 'Website Machine staging fulfillment is not fully configured.' })
   const rpc = createRpc({ baseUrl: config.url, publishableKey: config.publishableKey, fetchImpl })
   const publisher = createNetlifyCustomerPublisher({
     env: { WM_NETLIFY_CUSTOMER_TOKEN: config.netlifyToken, WM_NETLIFY_ACCOUNT_SLUG: config.netlifyAccountSlug },
@@ -154,9 +163,8 @@ export function createWebsiteMachineStripeWebhookHandler({ env = process.env, fe
       ...env,
       WM_STRIPE_SECRET_KEY: config.stripeSecret,
       WM_STRIPE_WEBHOOK_SECRET: config.stripeWebhookSecret,
-      WM_STRIPE_SETUP_PRICE_ID: config.stripeSetupPrice,
-      WM_STRIPE_MONTHLY_PRICE_ID: config.stripeMonthlyPrice,
-      WM_STRIPE_LIVEMODE: String(config.liveMode),
+      WM_STRIPE_PRICE_ID: config.stripePrice,
+      WM_STRIPE_LIVEMODE: 'false',
     },
     fetchImpl,
     publisher,
@@ -186,6 +194,7 @@ export function createWebsiteMachineStripeWebhookHandler({ env = process.env, fe
           customDomain: result.siteRecord.custom_domain,
           currentDeployId: result.siteRecord.current_deploy_id,
           previousDeployIds: result.siteRecord.previous_deploy_ids || [],
+          siteUrl: result.siteRecord.site_url,
         } : null,
       }
     },
@@ -205,6 +214,7 @@ export function createWebsiteMachineStripeWebhookHandler({ env = process.env, fe
         p_verified_deploy_url: site.verifiedDeployUrl, p_signature: signature(message, config.rpcSecret),
       })
     },
+    sendDeliveryEmail: createWebsiteMachineDeliveryEmail({ apiKey: config.deliveryEmailApiKey, from: config.deliveryFromEmail, fetchImpl }),
   })
 }
 
