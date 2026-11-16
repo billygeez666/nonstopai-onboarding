@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { generateWebsiteContent, renderStaticWebsite, sanitizeEditableText, validateBusinessInput } from '../lib/websiteMachine.js'
 import { buildResearchBrief } from '../lib/websiteMachineResearch.js'
 import './WebsiteMachine.css'
@@ -24,8 +24,15 @@ export default function WebsiteMachine() {
   const [view, setView] = useState('desktop')
   const [source, setSource] = useState({ label: '', url: '', findings: '' })
   const [project, setProject] = useState(null)
+  const [publishedPreviewUrl, setPublishedPreviewUrl] = useState('')
   const [serviceState, setServiceState] = useState('')
   const [busy, setBusy] = useState(false)
+  const [session, setSession] = useState(() => sessionStorage.getItem('wm_access_token') || '')
+  const [account, setAccount] = useState(() => sessionStorage.getItem('wm_account_email') || '')
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [authError, setAuthError] = useState('')
+  const createKey = useRef('')
   const isSample = content.facts.join('\n') === example.verifiedInfo
   const facts = content.facts
 
@@ -57,6 +64,37 @@ export default function WebsiteMachine() {
     setContent(generateWebsiteContent(checked.value).content)
   }
 
+  async function signIn(event) {
+    event.preventDefault()
+    setBusy(true)
+    setAuthError('')
+    try {
+      const response = await fetch('/.netlify/functions/website-machine-auth', {
+        method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email, password }),
+      })
+      const result = await response.json()
+      if (!response.ok) throw new Error(result.error || 'Sign-in failed.')
+      sessionStorage.setItem('wm_access_token', result.accessToken)
+      sessionStorage.setItem('wm_account_email', result.user.email || email)
+      setSession(result.accessToken)
+      setAccount(result.user.email || email)
+      setPassword('')
+    } catch (error) {
+      setAuthError(error.message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  function signOut() {
+    sessionStorage.removeItem('wm_access_token')
+    sessionStorage.removeItem('wm_account_email')
+    setSession('')
+    setAccount('')
+    setProject(null)
+    setPublishedPreviewUrl('')
+  }
+
   async function projectAction(action) {
     setBusy(true)
     setServiceState('')
@@ -67,29 +105,33 @@ export default function WebsiteMachine() {
       if (!research.ok) throw new Error(research.error)
       let current = project
       if (!current) {
+        if (!createKey.current) createKey.current = crypto.randomUUID()
         const created = await fetch('/.netlify/functions/website-machine-project', {
-          method: 'POST', headers: { 'content-type': 'application/json', 'idempotency-key': crypto.randomUUID() },
+          method: 'POST', headers: { 'content-type': 'application/json', 'idempotency-key': createKey.current, authorization: `Bearer ${session}` },
           body: JSON.stringify({ business: validateBusinessInput(input).value, content, research: research.verifiedFindings }),
         })
         const createdBody = await created.json()
         if (!created.ok) throw new Error(createdBody.error || 'Could not save the project.')
-        current = { id: createdBody.id, accessToken: createdBody.accessToken }
+        current = { id: createdBody.id }
+        createKey.current = ''
         setProject(current)
       } else if (action === 'save') {
         const saved = await fetch(`/.netlify/functions/website-machine-project?id=${encodeURIComponent(current.id)}`, {
-          method: 'PUT', headers: { 'content-type': 'application/json', authorization: `Bearer ${current.accessToken}` }, body: JSON.stringify({ content, business: validateBusinessInput(input).value, research: research.verifiedFindings }),
+          method: 'PUT', headers: { 'content-type': 'application/json', authorization: `Bearer ${session}` }, body: JSON.stringify({ content, business: validateBusinessInput(input).value, research: research.verifiedFindings }),
         })
         if (!saved.ok) throw new Error((await saved.json()).error || 'Could not save edits.')
+        setPublishedPreviewUrl('')
       }
       if (action === 'preview') {
         const response = await fetch('/.netlify/functions/website-machine-preview', {
-          method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${current.accessToken}` }, body: JSON.stringify({ id: current.id }),
+          method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${session}` }, body: JSON.stringify({ id: current.id }),
         })
         const result = await response.json()
         if (!response.ok) throw new Error(result.error || 'Could not publish the draft preview.')
-        setServiceState(`Preview submitted to staging (deploy ${result.deployId}). Check its status before sharing.`)
+        setPublishedPreviewUrl(result.previewUrl)
+        setServiceState(`Secure preview ready. This link expires ${new Date(result.expiresAt).toLocaleString()}.`)
       } else if (action === 'delivery') {
-        const response = await fetch(`/.netlify/functions/website-machine-delivery?id=${encodeURIComponent(current.id)}`, { headers: { authorization: `Bearer ${current.accessToken}` } })
+        const response = await fetch(`/.netlify/functions/website-machine-delivery?id=${encodeURIComponent(current.id)}`, { headers: { authorization: `Bearer ${session}` } })
         if (!response.ok) throw new Error((await response.json()).error || 'Could not prepare delivery.')
         const blob = await response.blob()
         const url = URL.createObjectURL(blob)
@@ -115,6 +157,12 @@ export default function WebsiteMachine() {
         <p className="wm-kicker">WEBSITE MACHINE / PHASE 1</p>
         <h1>From business facts<br /><em>to a website preview.</em></h1>
         <p>Enter what you know, generate a first draft, then edit the copy directly. Business facts stay clearly marked and separate from generated wording.</p>
+      </section>
+
+      <section className="wm-auth-panel" aria-label="Website Machine account">
+        {session
+          ? <><span>Signed in as <b>{account}</b></span><button type="button" onClick={signOut}>Sign out</button></>
+          : <form onSubmit={signIn}><strong>Sign in to save projects</strong><input aria-label="Account email" type="email" autoComplete="username" required maxLength={254} placeholder="Your NONSTOP AI account email" value={email} onChange={(event) => setEmail(event.target.value)} /><input aria-label="Account password" type="password" autoComplete="current-password" required maxLength={1024} placeholder="Password" value={password} onChange={(event) => setPassword(event.target.value)} /><button type="submit" disabled={busy}>{busy ? 'Signing in…' : 'Sign in'}</button>{authError && <small role="alert">{authError}</small>}</form>}
       </section>
 
       <div className="wm-workspace">
@@ -184,12 +232,13 @@ export default function WebsiteMachine() {
           </div>
           <div className="wm-preview-actions"><p className="wm-preview-hint"><span>↗</span> Click any text in the preview to edit it. Changes are local to this draft.</p><button type="button" className="wm-export" onClick={downloadSite}>Download draft HTML ↓</button></div>
           <div className="wm-project-actions">
-            <button type="button" onClick={() => projectAction('create')} disabled={busy || Boolean(project)}>{project ? 'Project saved in this session' : 'Save project'}</button>
-            <button type="button" onClick={() => projectAction('save')} disabled={busy || !project}>Save edits</button>
-            <button type="button" onClick={() => projectAction('preview')} disabled={busy || !project}>Publish staging preview</button>
-            <button type="button" onClick={() => projectAction('delivery')} disabled={busy || !project}>Prepare delivery file</button>
+            <button type="button" onClick={() => projectAction('create')} disabled={busy || Boolean(project) || !session}>{project ? 'Project saved in this session' : 'Save project'}</button>
+            <button type="button" onClick={() => projectAction('save')} disabled={busy || !project || !session}>Save edits</button>
+            <button type="button" onClick={() => projectAction('preview')} disabled={busy || !project || !session}>Publish staging preview</button>
+            <button type="button" onClick={() => projectAction('delivery')} disabled={busy || !project || !session}>Prepare delivery file</button>
           </div>
           {serviceState && <p className="wm-service-state" role="status">{serviceState}</p>}
+          {publishedPreviewUrl && <a className="wm-published-preview-link" href={publishedPreviewUrl} target="_blank" rel="noreferrer">Open secure website preview ↗</a>}
         </section>
       </div>
       <footer className="wm-page-footer">WEBSITE MACHINE <span>·</span> STRUCTURED CONTENT <span>·</span> CONTROLLED TEMPLATE <span>·</span> NO CUSTOMER SITE PUBLISHED</footer>

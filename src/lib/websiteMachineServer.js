@@ -1,115 +1,164 @@
-import { createHash, createHmac, randomBytes } from 'node:crypto'
+import { createHash, randomBytes } from 'node:crypto'
 import { generateWebsiteContent, renderStaticWebsite, sanitizeWebsiteContent, validateBusinessInput } from './websiteMachine.js'
 import { validateResearchSources } from './websiteMachineResearch.js'
 
-const digest = (value) => createHash('sha256').update(value).digest('hex')
-const STAGING_SUPABASE_URL = 'https://tszblrmdupgvhowcedgo.supabase.co'
-const STAGING_NETLIFY_SITE_ID = 'd9d04372-76e4-42d1-8ff2-1b1cbd79befa'
-const json = (statusCode, body) => ({ statusCode, headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' }, body: JSON.stringify(body) })
-const cors = (headers = {}) => ({ ...headers, 'access-control-allow-origin': process.env.URL || 'http://localhost:5173', 'access-control-allow-headers': 'content-type, authorization, idempotency-key', 'access-control-allow-methods': 'GET, POST, PUT, OPTIONS', 'vary': 'Origin' })
+const STAGING_SUPABASE_URL = 'https://lqywsbqctoydtdqvjzzw.supabase.co'
+const STAGING_PUBLIC_URL = 'https://nonstopai-staging-preview.netlify.app'
+const json = (statusCode, body, headers = {}) => ({ statusCode, headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', ...headers }, body: JSON.stringify(body) })
+const cors = (headers = {}) => ({ ...headers, 'access-control-allow-origin': process.env.URL || 'http://localhost:5173', 'access-control-allow-headers': 'content-type, authorization, idempotency-key', 'access-control-allow-methods': 'GET, POST, PUT, OPTIONS', vary: 'Origin' })
+const bearer = (event) => (event.headers?.authorization || event.headers?.Authorization || '').match(/^Bearer\s+(.+)$/i)?.[1] || ''
 
-export function createProjectApi({ env = process.env, fetchImpl = fetch, uuid = () => randomBytes(32).toString('base64url') } = {}) {
-  async function db(path, options = {}) {
-    const response = await fetchImpl(`${env.WM_STAGING_SUPABASE_URL}/rest/v1/${path}`, { ...options, headers: { apikey: env.WM_STAGING_SUPABASE_SECRET_KEY, authorization: `Bearer ${env.WM_STAGING_SUPABASE_SECRET_KEY}`, 'content-type': 'application/json', ...options.headers } })
-    if (!response.ok) throw new Error(`Storage request failed (${response.status})`)
+function asResponseError(error) {
+  if (error?.status === 429) return json(429, { error: 'Project creation limit reached. Try again in the next hour.' }, cors())
+  return json(500, { error: 'Website Machine request failed.' }, cors())
+}
+
+async function verifyUser({ token, env, fetchImpl }) {
+  if (!token || token.length > 4096 || env.WM_STAGING_SUPABASE_URL !== STAGING_SUPABASE_URL || !env.WM_STAGING_SUPABASE_PUBLISHABLE_KEY) return null
+  const response = await fetchImpl(`${STAGING_SUPABASE_URL}/auth/v1/user`, { headers: { apikey: env.WM_STAGING_SUPABASE_PUBLISHABLE_KEY, authorization: `Bearer ${token}` } })
+  if (!response.ok) return null
+  const user = await response.json()
+  return typeof user.id === 'string' && /^[0-9a-f-]{36}$/i.test(user.id) ? user : null
+}
+
+export function createAuthApi({ env = process.env, fetchImpl = fetch } = {}) {
+  return async (event) => {
+    if (event.httpMethod === 'OPTIONS') return { statusCode: 204, headers: cors() }
+    if (event.httpMethod !== 'POST') return json(405, { error: 'Method not allowed.' }, cors())
+    if (env.WM_STAGING_SUPABASE_URL !== STAGING_SUPABASE_URL || !env.WM_STAGING_SUPABASE_PUBLISHABLE_KEY) return json(503, { error: 'Website Machine authentication is not configured.' }, cors())
+    try {
+      if (Buffer.byteLength(event.body || '') > 5000) return json(413, { error: 'Request is too large.' }, cors())
+      const body = JSON.parse(event.body || '{}')
+      if (typeof body.email !== 'string' || body.email.length > 254 || typeof body.password !== 'string' || body.password.length > 1024) return json(400, { error: 'Enter a valid email and password.' }, cors())
+      const response = await fetchImpl(`${STAGING_SUPABASE_URL}/auth/v1/token?grant_type=password`, { method: 'POST', headers: { apikey: env.WM_STAGING_SUPABASE_PUBLISHABLE_KEY, 'content-type': 'application/json' }, body: JSON.stringify({ email: body.email.trim(), password: body.password }) })
+      if (!response.ok) return json(401, { error: 'Sign-in failed. Check your account details.' }, cors())
+      const session = await response.json()
+      if (typeof session.access_token !== 'string' || !session.user?.id) return json(401, { error: 'Sign-in failed. Check your account details.' }, cors())
+      return json(200, { accessToken: session.access_token, expiresIn: session.expires_in, user: { id: session.user.id, email: session.user.email } }, cors())
+    } catch {
+      return json(400, { error: 'Sign-in request could not be processed.' }, cors())
+    }
+  }
+}
+
+export function createProjectApi({ env = process.env, fetchImpl = fetch } = {}) {
+  async function db(path, token, options = {}) {
+    const response = await fetchImpl(`${STAGING_SUPABASE_URL}/rest/v1/${path}`, { ...options, headers: { apikey: env.WM_STAGING_SUPABASE_PUBLISHABLE_KEY, authorization: `Bearer ${token}`, 'content-type': 'application/json', ...options.headers } })
+    if (!response.ok) {
+      const details = await response.json().catch(() => ({}))
+      const error = new Error('Storage request failed')
+      error.status = details.code === 'P0001' && /rate limit/i.test(details.message || '') ? 429 : response.status
+      throw error
+    }
     return response.status === 204 ? null : response.json()
   }
 
   return async (event) => {
     if (event.httpMethod === 'OPTIONS') return { statusCode: 204, headers: cors() }
-    if (env.WM_STAGING_SUPABASE_URL !== STAGING_SUPABASE_URL || !env.WM_STAGING_SUPABASE_SECRET_KEY) return json(503, { error: 'Website Machine staging storage is not configured.' })
+    if (env.WM_STAGING_SUPABASE_URL !== STAGING_SUPABASE_URL || !env.WM_STAGING_SUPABASE_PUBLISHABLE_KEY) return json(503, { error: 'Website Machine storage is not configured.' }, cors())
     try {
+      const token = bearer(event)
+      const user = await verifyUser({ token, env, fetchImpl })
+      if (!user) return json(401, { error: 'A valid Website Machine account session is required.' }, cors())
       const url = new URL(event.rawUrl || `https://local.invalid${event.path || '/'}`)
       if (event.httpMethod === 'POST') {
+        if (Buffer.byteLength(event.body || '') > 20000) return json(413, { error: 'Request is too large.' }, cors())
         const body = JSON.parse(event.body || '{}')
-        if (Buffer.byteLength(event.body || '') > 20000) return json(413, { error: 'Request is too large.' })
         const input = validateBusinessInput(body.business)
-        if (!input.ok) return json(400, { error: 'Invalid business information.', fields: input.errors })
+        if (!input.ok) return json(400, { error: 'Invalid business information.', fields: input.errors }, cors())
         const generated = generateWebsiteContent(input.value)
         const safeContent = sanitizeWebsiteContent(body.content || generated.content)
-        if (!safeContent.ok) return json(400, { error: safeContent.error })
+        if (!safeContent.ok) return json(400, { error: safeContent.error }, cors())
+        if (renderStaticWebsite(safeContent.content).length > 150000) return json(400, { error: 'Website content is too large.' }, cors())
         const safeResearch = validateResearchSources(body.research || [])
-        if (!safeResearch.ok) return json(400, { error: safeResearch.error })
-        const preview = renderStaticWebsite(safeContent.content)
-        if (preview.length > 150000) return json(400, { error: 'Website content is too large.' })
-        const key = event.headers?.['idempotency-key'] || event.headers?.['Idempotency-Key'] || uuid()
-        if (!/^[A-Za-z0-9_-]{12,100}$/.test(key)) return json(400, { error: 'Invalid idempotency key.' })
-        const token = createHmac('sha256', env.WM_STAGING_SUPABASE_SECRET_KEY).update(`website-machine-project:${key}`).digest('base64url')
-        const rows = await db('website_machine_projects?on_conflict=idempotency_key', { method: 'POST', headers: { prefer: 'resolution=ignore-duplicates,return=representation' }, body: JSON.stringify({ idempotency_key: key, access_token_hash: digest(token), business: input.value, content: safeContent.content, research: safeResearch.sources, status: 'draft' }) })
-        const saved = rows?.length ? rows : await db(`website_machine_projects?idempotency_key=eq.${encodeURIComponent(key)}&access_token_hash=eq.${digest(token)}&select=id,content,status`)
-        if (!saved?.length) return json(500, { error: 'Project could not be saved.' })
-        return json(rows?.length ? 201 : 200, { id: saved[0].id, accessToken: token, status: saved[0].status || 'draft', content: saved[0].content })
+        if (!safeResearch.ok) return json(400, { error: safeResearch.error }, cors())
+        const key = event.headers?.['idempotency-key'] || event.headers?.['Idempotency-Key'] || ''
+        if (!/^[A-Za-z0-9_-]{12,100}$/.test(key)) return json(400, { error: 'A valid idempotency key is required.' }, cors())
+        const rows = await db('rpc/wm_create_project', token, { method: 'POST', body: JSON.stringify({ p_idempotency_key: key, p_business: input.value, p_content: safeContent.content, p_research: safeResearch.sources }) })
+        if (!rows?.length) return json(500, { error: 'Project could not be saved.' }, cors())
+        return json(201, { id: rows[0].id, status: rows[0].status, content: rows[0].content }, cors())
       }
       const projectId = url.searchParams.get('id')
-      const token = (event.headers?.authorization || '').replace(/^Bearer\s+/i, '')
-      if (!projectId || !/^[0-9a-f-]{36}$/i.test(projectId) || !/^[A-Za-z0-9_-]{32,100}$/.test(token)) return json(401, { error: 'Valid project access is required.' })
-      const rows = await db(`website_machine_projects?id=eq.${encodeURIComponent(projectId)}&access_token_hash=eq.${digest(token)}&select=id,business,content,research,status,created_at,updated_at`)
-      if (!rows?.length) return json(404, { error: 'Project not found.' })
-      if (event.httpMethod === 'GET') return json(200, rows[0])
+      if (!projectId || !/^[0-9a-f-]{36}$/i.test(projectId)) return json(400, { error: 'A valid project id is required.' }, cors())
+      const projectPath = `wm_projects?id=eq.${encodeURIComponent(projectId)}&select=id,owner_id,business,content,research,status,created_at,updated_at,preview_deploy_id,preview_url`
+      const rows = await db(projectPath, token)
+      if (!rows?.length) return json(404, { error: 'Project not found.' }, cors())
+      if (event.httpMethod === 'GET') return json(200, rows[0], cors())
       if (event.httpMethod === 'PUT') {
+        if (Buffer.byteLength(event.body || '') > 20000) return json(413, { error: 'Request is too large.' }, cors())
         const body = JSON.parse(event.body || '{}')
-        if (Buffer.byteLength(event.body || '') > 20000) return json(413, { error: 'Request is too large.' })
         const safeContent = sanitizeWebsiteContent(body.content)
-        if (!safeContent.ok || renderStaticWebsite(safeContent.content).length > 150000) return json(400, { error: 'Invalid website content.' })
-        const content = safeContent.content
-        const patch = { content, status: 'review' }
+        if (!safeContent.ok || renderStaticWebsite(safeContent.content).length > 150000) return json(400, { error: 'Invalid website content.' }, cors())
+        const patch = { content: safeContent.content, status: 'review' }
         if (body.business !== undefined) {
           const business = validateBusinessInput(body.business)
-          if (!business.ok) return json(400, { error: 'Invalid business information.', fields: business.errors })
+          if (!business.ok) return json(400, { error: 'Invalid business information.', fields: business.errors }, cors())
           patch.business = business.value
         }
         if (body.research !== undefined) {
           const research = validateResearchSources(body.research)
-          if (!research.ok) return json(400, { error: research.error })
+          if (!research.ok) return json(400, { error: research.error }, cors())
           patch.research = research.sources
         }
-        const updated = await db(`website_machine_projects?id=eq.${encodeURIComponent(projectId)}&access_token_hash=eq.${digest(token)}`, { method: 'PATCH', headers: { prefer: 'return=representation' }, body: JSON.stringify(patch) })
-        return updated?.length ? json(200, { id: updated[0].id, status: updated[0].status, content: updated[0].content }) : json(404, { error: 'Project not found.' })
+        const updated = await db(`wm_projects?id=eq.${encodeURIComponent(projectId)}`, token, { method: 'PATCH', headers: { prefer: 'return=representation' }, body: JSON.stringify(patch) })
+        return updated?.length ? json(200, { id: updated[0].id, status: updated[0].status, content: updated[0].content }, cors()) : json(404, { error: 'Project not found.' }, cors())
       }
-      return json(405, { error: 'Method not allowed.' })
-    } catch {
-      return json(500, { error: 'Website Machine request failed.' })
+      return json(405, { error: 'Method not allowed.' }, cors())
+    } catch (error) {
+      return asResponseError(error)
     }
   }
 }
 
-export function createPreviewApi({ env = process.env, fetchImpl = fetch, hash = (html) => createHash('sha1').update(html).digest('hex') } = {}) {
+export function createPreviewApi({ env = process.env, fetchImpl = fetch, tokenFactory = () => randomBytes(32).toString('base64url'), now = () => Date.now() } = {}) {
   const projectApi = createProjectApi({ env, fetchImpl })
   return async (event) => {
     if (event.httpMethod === 'OPTIONS') return { statusCode: 204, headers: cors() }
-    if (event.httpMethod !== 'POST') return json(405, { error: 'Method not allowed.' })
-    if (env.WM_STAGING_NETLIFY_SITE_ID !== STAGING_NETLIFY_SITE_ID || !env.WM_STAGING_NETLIFY_TOKEN) return json(503, { error: 'Website Machine staging preview publishing is not configured.' })
+    if (event.httpMethod !== 'POST') return json(405, { error: 'Method not allowed.' }, cors())
+    if (env.WM_STAGING_SUPABASE_URL !== STAGING_SUPABASE_URL || !env.WM_STAGING_SUPABASE_PUBLISHABLE_KEY) return json(503, { error: 'Website Machine preview publishing is not configured.' }, cors())
     try {
-      if (Buffer.byteLength(event.body || '') > 2000) return json(413, { error: 'Request is too large.' })
+      if (Buffer.byteLength(event.body || '') > 2000) return json(413, { error: 'Request is too large.' }, cors())
       const body = JSON.parse(event.body || '{}')
       const read = await projectApi({ httpMethod: 'GET', rawUrl: `https://local.invalid/.netlify/functions/website-machine-project?id=${encodeURIComponent(body.id || '')}`, headers: event.headers })
       if (read.statusCode !== 200) return read
-      const html = renderStaticWebsite(read.body ? JSON.parse(read.body).content : {})
-      const sha = hash(html)
-      const response = await fetchImpl(`https://api.netlify.com/api/v1/sites/${STAGING_NETLIFY_SITE_ID}/deploys`, { method: 'POST', headers: { authorization: `Bearer ${env.WM_STAGING_NETLIFY_TOKEN}`, 'content-type': 'application/json' }, body: JSON.stringify({ draft: true, files: { '/index.html': sha } }) })
-      if (!response.ok) throw new Error('Preview deploy create failed')
-      const deploy = await response.json()
-      if ((deploy.required || []).includes(sha)) {
-        const upload = await fetchImpl(`https://api.netlify.com/api/v1/deploys/${encodeURIComponent(deploy.id)}/files/index.html`, { method: 'PUT', headers: { authorization: `Bearer ${env.WM_STAGING_NETLIFY_TOKEN}`, 'content-type': 'application/octet-stream' }, body: html })
-        if (!upload.ok) throw new Error('Preview upload failed')
-      }
-      let previewUrl = ''
-      try {
-        const candidate = new URL(deploy.deploy_url)
-        if (candidate.protocol === 'https:' && candidate.hostname.endsWith('.netlify.app')) previewUrl = candidate.toString()
-      } catch {
-        // Some deploy responses omit deploy_url while a preview is being prepared.
-      }
-      const accessToken = (event.headers?.authorization || '').replace(/^Bearer\s+/i, '')
-      const projectId = encodeURIComponent(body.id)
-      const saved = await fetchImpl(`${STAGING_SUPABASE_URL}/rest/v1/website_machine_projects?id=eq.${projectId}&access_token_hash=eq.${digest(accessToken)}`, {
-        method: 'PATCH', headers: { apikey: env.WM_STAGING_SUPABASE_SECRET_KEY, authorization: `Bearer ${env.WM_STAGING_SUPABASE_SECRET_KEY}`, 'content-type': 'application/json', prefer: 'return=minimal' },
-        body: JSON.stringify({ status: 'preview_pending', preview_deploy_id: deploy.id, preview_url: previewUrl || null }),
+      const project = JSON.parse(read.body)
+      const previewToken = tokenFactory()
+      const tokenHash = createHash('sha256').update(previewToken).digest('hex')
+      const expiresAt = new Date(now() + 7 * 24 * 60 * 60 * 1000).toISOString()
+      const previewUrl = new URL('/.netlify/functions/website-machine-render-preview', STAGING_PUBLIC_URL)
+      previewUrl.searchParams.set('id', project.id)
+      previewUrl.searchParams.set('token', previewToken)
+      const token = bearer(event)
+      const saved = await fetchImpl(`${STAGING_SUPABASE_URL}/rest/v1/wm_projects?id=eq.${encodeURIComponent(body.id)}`, {
+        method: 'PATCH', headers: { apikey: env.WM_STAGING_SUPABASE_PUBLISHABLE_KEY, authorization: `Bearer ${token}`, 'content-type': 'application/json', prefer: 'return=minimal' },
+        body: JSON.stringify({ status: 'preview_ready', preview_deploy_id: null, preview_url: previewUrl.toString(), preview_token_hash: tokenHash, preview_expires_at: expiresAt }),
       })
       if (!saved.ok) throw new Error('Could not record preview state')
-      return json(202, { deployId: deploy.id, status: 'processing', ...(previewUrl ? { previewUrl } : {}), message: 'Preview draft submitted. Confirm the deploy is ready before sharing.' })
+      return json(200, { status: 'ready', previewUrl: previewUrl.toString(), expiresAt, message: 'Secure preview is ready to share.' }, cors())
     } catch {
-      return json(502, { error: 'Preview publishing failed.' })
+      return json(502, { error: 'Preview publishing failed.' }, cors())
+    }
+  }
+}
+
+export function createRenderPreviewApi({ env = process.env, fetchImpl = fetch } = {}) {
+  return async (event) => {
+    if (event.httpMethod !== 'GET') return { statusCode: 405, headers: { 'cache-control': 'no-store' }, body: '' }
+    if (env.WM_STAGING_SUPABASE_URL !== STAGING_SUPABASE_URL || !env.WM_STAGING_SUPABASE_PUBLISHABLE_KEY) return { statusCode: 503, headers: { 'cache-control': 'no-store' }, body: 'Preview unavailable.' }
+    try {
+      const url = new URL(event.rawUrl || `https://local.invalid${event.path || '/'}`)
+      const id = url.searchParams.get('id') || ''
+      const token = url.searchParams.get('token') || ''
+      if (!/^[0-9a-f-]{36}$/i.test(id) || !/^[A-Za-z0-9_-]{43}$/.test(token)) return { statusCode: 404, headers: { 'cache-control': 'no-store' }, body: 'Preview not found.' }
+      const tokenHash = createHash('sha256').update(token).digest('hex')
+      const response = await fetchImpl(`${STAGING_SUPABASE_URL}/rest/v1/rpc/wm_get_public_preview`, { method: 'POST', headers: { apikey: env.WM_STAGING_SUPABASE_PUBLISHABLE_KEY, 'content-type': 'application/json' }, body: JSON.stringify({ p_project_id: id, p_token_hash: tokenHash }) })
+      if (!response.ok) throw new Error('Preview read failed')
+      const rows = await response.json()
+      if (!rows?.length) return { statusCode: 404, headers: { 'cache-control': 'no-store' }, body: 'Preview not found or expired.' }
+      const html = renderStaticWebsite(rows[0].content)
+      return { statusCode: 200, headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store', 'x-robots-tag': 'noindex, nofollow', 'x-content-type-options': 'nosniff', 'referrer-policy': 'no-referrer', 'content-security-policy': "default-src 'none'; style-src 'unsafe-inline'; img-src data: https:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'" }, body: html }
+    } catch {
+      return { statusCode: 502, headers: { 'cache-control': 'no-store' }, body: 'Preview unavailable.' }
     }
   }
 }

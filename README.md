@@ -34,16 +34,22 @@ The Netlify Functions persist projects in Supabase, publish **draft** Netlify
 deploys, and return a bearer-authorized static HTML delivery file. They never
 execute generated code or accept arbitrary HTML for publishing.
 
-The server adapter is hard-pinned to the dedicated Website Machine staging
-Supabase project and the `nonstopai-staging-preview` Netlify site. It requires
-these private Netlify environment variables: `WM_STAGING_SUPABASE_URL`,
-`WM_STAGING_SUPABASE_SECRET_KEY`, `WM_STAGING_NETLIFY_SITE_ID`, and
-`WM_STAGING_NETLIFY_TOKEN`. The Supabase URL and Netlify site ID must match the
-staging project IDs embedded in the server adapter. Never use production keys.
-The SQL schema is in `supabase/migrations/` and must be applied to that staging
-project before storage is enabled. Browser code only receives an opaque,
-project-specific access token; the Supabase secret and Netlify token stay in the
-function environment.
+The server adapter is pinned to the active NonStopAI CRM Supabase project and
+the `nonstopai-staging-preview` Netlify site. It uses Supabase Auth email and
+password sign-in, validates each bearer JWT server-side, and sends only the
+user JWT plus the project publishable key to PostgREST. It never uses a service
+role key. Data lives in isolated `wm_*` tables with owner-only RLS; project
+creation goes through a transaction-safe RPC limited to eight creations per
+user per hour. The staging environment needs `WM_STAGING_SUPABASE_URL` and
+`WM_STAGING_SUPABASE_PUBLISHABLE_KEY`; the publishable key is not a secret.
+Shareable previews use random, seven-day bearer links. Only token hashes are
+stored in the project table, and the render function serves a fixed escaped
+template with `noindex` and a restrictive content security policy. Staging does
+not receive a broad Netlify account token.
+
+The SQL migrations in `supabase/migrations/` were checked against the CRM schema
+and applied as additive `wm_*` tables, policies, and functions. They do not
+alter CRM, booking, onboarding, or Website Generator tables.
 
 Research in this first release is source-led: the operator records findings
 they have checked. It does not crawl supplied URLs. Existing n8n lead finder
@@ -51,8 +57,9 @@ and Website Generator workflows are separate systems and remain unchanged.
 The customer delivery action downloads a static site file; email, custom-domain
 provisioning, payment gating, and hands-off customer delivery are not connected.
 
-Run `npm test` for the validation, persistence-adapter, preview-publish, and
-delivery tests. `npm run build` runs these tests before Vite builds the app.
+Run `npm test` for the validation, authentication, persistence-adapter,
+preview-publish, and delivery tests. `npm run build` runs these tests before
+Vite builds the app.
 
 Create a `.env` file (see `.env.example`) with:
 
