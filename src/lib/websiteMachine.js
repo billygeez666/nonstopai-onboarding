@@ -63,6 +63,28 @@ export function sanitizeEditableText(value, maxLength = 300) {
   return stripControls(value).slice(0, maxLength)
 }
 
+export function sanitizeWebsiteContent(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value) || !Array.isArray(value.facts) || value.facts.length > 12 || value.facts.some((fact) => typeof fact !== 'string')) {
+    return { ok: false, error: 'Website content must use the supported structured format.' }
+  }
+  const limits = { businessName: 100, industry: 80, location: 100, websiteUrl: 300, heroTitle: 120, heroDescription: 240, aboutTitle: 120, aboutDescription: 300, ctaLabel: 100 }
+  const content = Object.fromEntries(Object.entries(limits).map(([key, limit]) => [key, sanitizeEditableText(value[key], limit)]))
+  content.facts = value.facts.map((fact) => sanitizeEditableText(fact, 180)).filter(Boolean)
+  for (const key of ['businessName', 'industry', 'location', 'heroTitle', 'heroDescription', 'aboutTitle', 'aboutDescription', 'ctaLabel']) {
+    if (!content[key]) return { ok: false, error: `Website content is missing ${key}.` }
+  }
+  if (content.websiteUrl) {
+    try {
+      const url = new URL(content.websiteUrl)
+      if (!['http:', 'https:'].includes(url.protocol) || !url.hostname.includes('.') || url.username || url.password) throw new Error('invalid')
+      content.websiteUrl = url.toString()
+    } catch {
+      content.websiteUrl = ''
+    }
+  }
+  return { ok: true, content }
+}
+
 const escapeHtml = (value) => String(value ?? '').replace(/[&<>"']/g, (char) => ({
   '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
 })[char])

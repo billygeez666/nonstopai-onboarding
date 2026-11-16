@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { generateWebsiteContent, renderStaticWebsite, sanitizeEditableText, validateBusinessInput } from './websiteMachine.js'
+import { generateWebsiteContent, renderStaticWebsite, sanitizeEditableText, sanitizeWebsiteContent, validateBusinessInput } from './websiteMachine.js'
 
 const garage = {
   businessName: 'Northstar Motor Works',
@@ -52,4 +52,12 @@ test('exports a fixed, escaped static template without executing supplied markup
   assert.doesNotMatch(html, /<script>/i)
   assert.match(html, /name="robots" content="noindex,nofollow"/)
   assert.match(html, /@media\(max-width:600px\)/)
+})
+
+test('accepts only a bounded structured website content shape for server persistence', () => {
+  const content = generateWebsiteContent(garage).content
+  assert.equal(sanitizeWebsiteContent(content).ok, true)
+  assert.equal(sanitizeWebsiteContent({ ...content, facts: [42] }).ok, false)
+  assert.equal(sanitizeWebsiteContent({ ...content, facts: Array(13).fill('fact') }).ok, false)
+  assert.equal(sanitizeWebsiteContent({ ...content, websiteUrl: 'javascript:alert(1)' }).content.websiteUrl, '')
 })

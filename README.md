@@ -24,19 +24,35 @@ npm install -g netlify-cli
 netlify dev
 ```
 
-## Website Machine prototype
+## Website Machine engine
 
-The first Website Machine generator is available at `/website-machine`. It uses
-structured business fields and a controlled React template; its copy generation
-is deterministic and runs in the browser. Supplied website URLs are validated
-and displayed as links only. No website is fetched, no AI-generated code is run,
-and customer details are not sent to a backend. Preview copy can be edited, then
-downloaded as a self-contained, responsive HTML draft. Replace the fictional
-garage sample facts with information confirmed by the business before treating
-a draft as real. Customer websites are not published by this prototype.
+The Website Machine is available at `/website-machine`. It generates structured
+copy from supplied business facts, records manually verified HTTPS source
+findings with provenance, renders a controlled responsive template, and lets an
+operator edit the copy. Website URLs are stored as links and are never fetched.
+The Netlify Functions persist projects in Supabase, publish **draft** Netlify
+deploys, and return a bearer-authorized static HTML delivery file. They never
+execute generated code or accept arbitrary HTML for publishing.
 
-Run the core validation/generation suite with `npm test`. The production build
-runs the same suite before Vite creates `dist/`.
+The server adapter is hard-pinned to the dedicated Website Machine staging
+Supabase project and the `nonstopai-staging-preview` Netlify site. It requires
+these private Netlify environment variables: `WM_STAGING_SUPABASE_URL`,
+`WM_STAGING_SUPABASE_SECRET_KEY`, `WM_STAGING_NETLIFY_SITE_ID`, and
+`WM_STAGING_NETLIFY_TOKEN`. The Supabase URL and Netlify site ID must match the
+staging project IDs embedded in the server adapter. Never use production keys.
+The SQL schema is in `supabase/migrations/` and must be applied to that staging
+project before storage is enabled. Browser code only receives an opaque,
+project-specific access token; the Supabase secret and Netlify token stay in the
+function environment.
+
+Research in this first release is source-led: the operator records findings
+they have checked. It does not crawl supplied URLs. Existing n8n lead finder
+and Website Generator workflows are separate systems and remain unchanged.
+The customer delivery action downloads a static site file; email, custom-domain
+provisioning, payment gating, and hands-off customer delivery are not connected.
+
+Run `npm test` for the validation, persistence-adapter, preview-publish, and
+delivery tests. `npm run build` runs these tests before Vite builds the app.
 
 Create a `.env` file (see `.env.example`) with:
 
