@@ -101,6 +101,39 @@ test('staging checkout asks the self-only tester RPC before reading the owner pr
   assert.deepEqual(allowed.calls.map((call) => call.url.split('/').at(-1)), ['user', 'wm_is_staging_checkout_tester', `wm_projects?id=eq.${projectId}&select=id,owner_id,content,status`])
 })
 
+test('inactive £99 test offer returns a safe conflict after authentication and tester checks, without creating a Stripe session', async () => {
+  const ownerId = '7a9d31b9-5bbb-48e8-83ec-5200a5293314'
+  const projectId = 'c70f3d5f-f910-441a-9b39-8374d1d28532'
+  const priceId = 'price_test_fixture_website_machine_99'
+  const calls = []
+  const handler = createWebsiteMachineCheckoutHandler({ env: {
+    WM_RUNTIME_ENV: 'staging', WM_STAGING_SUPABASE_URL: supabase,
+    WM_STAGING_SUPABASE_PUBLISHABLE_KEY: 'staging-publishable', WM_STAGING_PUBLIC_URL: 'https://bendarus.netlify.app',
+    WM_STAGING_STRIPE_SECRET_KEY: 'sk_test_staging', WM_STAGING_STRIPE_WEBHOOK_SECRET: 'whsec_staging',
+    WM_STAGING_STRIPE_PRICE_ID: priceId, WM_STAGING_PAYMENT_RPC_SECRET: 's'.repeat(40),
+    WM_STAGING_NETLIFY_CUSTOMER_TOKEN: 'staging-netlify-token', WM_STAGING_NETLIFY_ACCOUNT_SLUG: 'website-machine',
+    WM_STAGING_EMAIL_API_KEY: 'email-key', WM_STAGING_DELIVERY_FROM_EMAIL: 'websites@example.test',
+  }, fetchImpl: async (url, options = {}) => {
+    calls.push({ url, options })
+    if (url.endsWith('/auth/v1/user')) return { ok: true, json: async () => ({ id: ownerId }) }
+    if (url.endsWith('/rpc/wm_is_staging_checkout_tester')) return { ok: true, json: async () => true }
+    if (url.includes('/rest/v1/wm_projects')) return { ok: true, json: async () => [{ id: projectId, owner_id: ownerId, content: {}, status: 'draft' }] }
+    if (url.startsWith('https://api.stripe.com/v1/prices/')) return { ok: true, json: async () => ({ id: priceId, active: true, livemode: false, currency: 'gbp', unit_amount: 9900, recurring: null, product: { active: true, name: 'Website Machine One-page Website', metadata: {} } }) }
+    if (url.endsWith('/rpc/wm_create_checkout_order')) return { ok: false, status: 400, json: async () => ({ code: '22023', message: 'unapproved Website Machine one-off test price' }) }
+    if (url.includes('/checkout/sessions')) throw new Error('inactive offer must stop before creating a Stripe checkout session')
+    throw new Error(`Unexpected request: ${url}`)
+  } })
+
+  const response = await handler({ httpMethod: 'POST', headers: { authorization: 'Bearer staging-user-token' }, body: JSON.stringify({ projectId, idempotencyKey: 'wm-inactive-offer-check-01' }) })
+  const body = JSON.parse(response.body)
+  assert.equal(response.statusCode, 409)
+  assert.equal(body.code, 'WM_TEST_OFFER_INACTIVE')
+  assert.match(body.error, /£99 sandbox offer is currently inactive/i)
+  assert.match(body.error, /No order or payment was created/i)
+  assert.doesNotMatch(response.body, /unapproved Website Machine one-off test price|22023/)
+  assert.deepEqual(calls.filter((call) => call.url.includes('/checkout/sessions')), [])
+})
+
 test('staging readiness diagnostic verifies the RPC secret and reports only missing variable names', async () => {
   const secret = 'synthetic-test-payment-rpc-secret-0123456789'
   const now = Date.now()

@@ -105,7 +105,13 @@ export function createWebsiteMachineCheckoutApi({
       if (!session.url || session.livemode !== liveMode || session.metadata?.wm_order_id !== order.id) return { statusCode: 502, body: JSON.stringify({ error: 'Stripe returned a checkout in the wrong mode.' }) }
       await saveCheckoutSession({ token, orderId: order.id, sessionId: session.id, url: session.url })
       return { statusCode: 200, headers: { 'content-type': 'application/json', 'cache-control': 'no-store' }, body: JSON.stringify({ checkoutUrl: session.url }) }
-    } catch {
+    } catch (error) {
+      if (error?.safeCode === 'WM_TEST_OFFER_INACTIVE') {
+        return { statusCode: 409, body: JSON.stringify({ code: error.safeCode, error: error.message }) }
+      }
+      if (error?.safeCode === 'WM_STAGING_TESTER_REQUIRED') {
+        return { statusCode: 403, body: JSON.stringify({ code: error.safeCode, error: error.message }) }
+      }
       return { statusCode: 400, body: JSON.stringify({ error: 'Checkout request could not be processed.' }) }
     }
   }

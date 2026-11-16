@@ -146,7 +146,13 @@ function createRpc({ baseUrl, publishableKey, fetchImpl }) {
       headers: { apikey: publishableKey, 'content-type': 'application/json', ...(token ? { authorization: `Bearer ${token}` } : {}) },
       body: JSON.stringify(payload),
     })
-    if (!response.ok) throw new Error(`Website Machine storage request failed (${response.status}).`)
+    if (!response.ok) {
+      const details = await response.json().catch(() => ({}))
+      const error = new Error(`Website Machine storage request failed (${response.status}).`)
+      error.databaseCode = typeof details.code === 'string' ? details.code : ''
+      error.databaseMessage = typeof details.message === 'string' ? details.message : ''
+      throw error
+    }
     return response.status === 204 ? null : response.json()
   }
 }
@@ -179,16 +185,30 @@ export function createWebsiteMachineCheckoutHandler({ env = process.env, fetchIm
       return rows.find((row) => row.owner_id === ownerId) || null
     },
     createOrder: async ({ token, project, setupPriceId, monthlyPriceId, domain, domainChallenge, mode, idempotencyKey }) => {
-      const rows = await rpc('wm_create_checkout_order', {
-        p_project_id: project.id,
-        p_idempotency_key: idempotencyKey,
-        p_mode: mode,
-        p_setup_price_id: setupPriceId,
-        p_monthly_price_id: monthlyPriceId,
-        p_domain: domain,
-        p_domain_challenge: domainChallenge?.token || null,
-      }, token)
-      return Array.isArray(rows) ? rows[0] : null
+      try {
+        const rows = await rpc('wm_create_checkout_order', {
+          p_project_id: project.id,
+          p_idempotency_key: idempotencyKey,
+          p_mode: mode,
+          p_setup_price_id: setupPriceId,
+          p_monthly_price_id: monthlyPriceId,
+          p_domain: domain,
+          p_domain_challenge: domainChallenge?.token || null,
+        }, token)
+        return Array.isArray(rows) ? rows[0] : null
+      } catch (error) {
+        if (error.databaseCode === '22023' && error.databaseMessage === 'unapproved Website Machine one-off test price') {
+          const safeError = new Error('The £99 sandbox offer is currently inactive. No order or payment was created.')
+          safeError.safeCode = 'WM_TEST_OFFER_INACTIVE'
+          throw safeError
+        }
+        if (error.databaseCode === '42501' && error.databaseMessage === 'staging tester access required') {
+          const safeError = new Error('Checkout is restricted to approved staging testers. No order or payment was created.')
+          safeError.safeCode = 'WM_STAGING_TESTER_REQUIRED'
+          throw safeError
+        }
+        throw error
+      }
     },
     saveCheckoutSession: async ({ token, orderId, sessionId }) => {
       const saved = await rpc('wm_attach_checkout_session', { p_order_id: orderId, p_session_id: sessionId }, token)
