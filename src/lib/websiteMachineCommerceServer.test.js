@@ -53,7 +53,7 @@ test('staging accepts the configured Stripe secret names while still requiring a
     WM_RUNTIME_ENV: 'staging', WM_STAGING_SUPABASE_URL: supabase,
     WM_STAGING_SUPABASE_PUBLISHABLE_KEY: 'staging-publishable', WM_STAGING_PUBLIC_URL: 'https://bendarus.netlify.app',
     STRIPE_SECRET_KEY: 'sk_test_staging', STRIPE_WEBHOOK_SECRET: 'whsec_staging',
-    STRIPE_PRICE_ID: 'price_1UcSDCEWP0eV3FnnUS5CHpdZ',
+    STRIPE_PRICE_ID: 'price_test_fixture_website_machine_99',
     WM_STAGING_PAYMENT_RPC_SECRET: 's'.repeat(40), WM_STAGING_NETLIFY_CUSTOMER_TOKEN: 'dedicated-staging-token',
     WM_STAGING_NETLIFY_ACCOUNT_SLUG: 'website-machine', WM_STAGING_EMAIL_API_KEY: 'staging-email-key',
     WM_STAGING_DELIVERY_FROM_EMAIL: 'websites@example.test',
