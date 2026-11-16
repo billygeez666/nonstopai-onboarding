@@ -87,6 +87,7 @@ export function createWebsiteMachineDomainChallengeHandler({ env = process.env, 
   if (!config) return async () => ({ statusCode: 503, body: 'Website Machine is not configured.' })
   return async (event) => {
     if (event.httpMethod !== 'POST') return { statusCode: 405, body: 'Method not allowed.' }
+    if (Buffer.byteLength(event.body || '') > 1000) return { statusCode: 413, body: 'Request is too large.' }
     const token = (event.headers?.authorization || event.headers?.Authorization || '').match(/^Bearer\s+(.+)$/i)?.[1]
     if (!token) return { statusCode: 401, body: 'Authentication required.' }
     try {
@@ -213,6 +214,7 @@ export function createWebsiteMachineRollbackHandler({ env = process.env, fetchIm
   const publisher = createNetlifyCustomerPublisher({ env: { WM_NETLIFY_CUSTOMER_TOKEN: config.netlifyToken }, fetchImpl })
   return async (event) => {
     if (event.httpMethod !== 'POST') return { statusCode: 405, body: 'Method not allowed.' }
+    if (Buffer.byteLength(event.body || '') > 2000) return { statusCode: 413, body: 'Request is too large.' }
     const token = (event.headers?.authorization || '').match(/^Bearer\s+(.+)$/i)?.[1]
     if (!token) return { statusCode: 401, body: 'Authentication required.' }
     try {

@@ -47,6 +47,7 @@ export function createWebsiteMachineCheckoutApi({
 } = {}) {
   return async (event) => {
     if (event.httpMethod !== 'POST') return { statusCode: 405, body: 'Method not allowed.' }
+    if (Buffer.byteLength(event.body || '') > 20_000) return { statusCode: 413, body: JSON.stringify({ error: 'Request is too large.' }) }
     const liveMode = env.WM_STRIPE_LIVEMODE === 'true'
     if (!(liveMode ? env.WM_STRIPE_SECRET_KEY?.startsWith('sk_live_') : env.WM_STRIPE_SECRET_KEY?.startsWith('sk_test_')) || !env.WM_STRIPE_SETUP_PRICE_ID || !env.WM_STRIPE_MONTHLY_PRICE_ID) {
       return { statusCode: 503, body: JSON.stringify({ error: 'Website Machine checkout is not configured with verified staging prices.' }) }
@@ -139,6 +140,7 @@ export function createStripeWebsiteMachineWebhook({
     }
     try {
       const rawBody = event.isBase64Encoded ? Buffer.from(event.body || '', 'base64') : Buffer.from(event.body || '', 'utf8')
+      if (rawBody.length > 1_000_000) return { statusCode: 413, body: 'Stripe webhook is too large.' }
       const signature = event.headers?.['stripe-signature'] || event.headers?.['Stripe-Signature'] || ''
       const stripeEvent = verifyStripeWebhookSignature(rawBody, signature, env.WM_STRIPE_WEBHOOK_SECRET, now())
       if (!stripeEvent?.id || stripeEvent.livemode !== (env.WM_STRIPE_LIVEMODE === 'true')) return { statusCode: 400, body: 'Invalid Stripe webhook.' }
