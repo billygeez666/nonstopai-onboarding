@@ -1,0 +1,38 @@
+.wm-preview-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.wm-preview-actions .wm-preview-hint {
+  margin-right: auto;
+  text-align: left;
+}
+
+.wm-export {
+  border: 1px solid #59633f;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--lime);
+  padding: 8px 11px;
+  font: 10px 'DM Mono', monospace;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.wm-export:hover {
+  background: #333930;
+}
+
+@media (max-width: 500px) {
+  .wm-preview-actions {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 0;
+  }
+
+  .wm-preview-actions .wm-preview-hint {
+    margin: 11px 0;
+  }
+}

@@ -30,9 +30,10 @@ The first Website Machine generator is available at `/website-machine`. It uses
 structured business fields and a controlled React template; its copy generation
 is deterministic and runs in the browser. Supplied website URLs are validated
 and displayed as links only. No website is fetched, no AI-generated code is run,
-and customer details are not sent to a backend. Replace the fictional garage
-sample facts with information confirmed by the business before treating a draft
-as real. Customer websites are not published by this prototype.
+and customer details are not sent to a backend. Preview copy can be edited, then
+downloaded as a self-contained, responsive HTML draft. Replace the fictional
+garage sample facts with information confirmed by the business before treating
+a draft as real. Customer websites are not published by this prototype.
 
 Run the core validation/generation suite with `npm test`. The production build
 runs the same suite before Vite creates `dist/`.

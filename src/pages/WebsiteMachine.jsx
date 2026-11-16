@@ -1,7 +1,8 @@
-import { useMemo, useState } from 'react'
-import { generateWebsiteContent, sanitizeEditableText, validateBusinessInput } from '../lib/websiteMachine.js'
+import { useState } from 'react'
+import { generateWebsiteContent, renderStaticWebsite, sanitizeEditableText, validateBusinessInput } from '../lib/websiteMachine.js'
 import './WebsiteMachine.css'
 import './WebsiteMachineEdits.css'
+import './WebsiteMachineExport.css'
 
 const example = {
   businessName: 'Northstar Motor Works',
@@ -20,9 +21,8 @@ export default function WebsiteMachine() {
   const [validation, setValidation] = useState({})
   const [content, setContent] = useState(() => generateWebsiteContent(example).content)
   const [view, setView] = useState('desktop')
-  const isSample = input.verifiedInfo === example.verifiedInfo
-
-  const facts = useMemo(() => input.verifiedInfo.split('\n').map((fact) => fact.replace(/^\s*(?:[-*•]|\d+[.)])\s*/, '').trim()).filter(Boolean), [input.verifiedInfo])
+  const isSample = content.facts.join('\n') === example.verifiedInfo
+  const facts = content.facts
 
   function updateInput(event) {
     setInput((current) => ({ ...current, [event.target.name]: event.target.value }))
@@ -30,6 +30,17 @@ export default function WebsiteMachine() {
 
   function updateCopy(key, value, max = 300) {
     setContent((current) => ({ ...current, [key]: sanitizeEditableText(value, max) }))
+  }
+
+  function downloadSite() {
+    const fileName = `${content.businessName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'website'}-draft.html`
+    const blob = new Blob([renderStaticWebsite(content)], { type: 'text/html;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const anchor = document.createElement('a')
+    anchor.href = url
+    anchor.download = fileName
+    anchor.click()
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000)
   }
 
   function regenerate(event) {
@@ -108,7 +119,7 @@ export default function WebsiteMachine() {
               <footer className="wm-site-footer"><a href="#top">{content.businessName}</a><span>Browser draft · Customer site not published</span>{content.websiteUrl && <a className="wm-source-link" href={content.websiteUrl} target="_blank" rel="noreferrer">Current website ↗</a>}</footer>
             </article>
           </div>
-          <p className="wm-preview-hint"><span>↗</span> Click any text in the preview to edit it. Changes are local to this draft.</p>
+          <div className="wm-preview-actions"><p className="wm-preview-hint"><span>↗</span> Click any text in the preview to edit it. Changes are local to this draft.</p><button type="button" className="wm-export" onClick={downloadSite}>Download draft HTML ↓</button></div>
         </section>
       </div>
       <footer className="wm-page-footer">WEBSITE MACHINE <span>·</span> STRUCTURED CONTENT <span>·</span> CONTROLLED TEMPLATE <span>·</span> NO CUSTOMER SITE PUBLISHED</footer>

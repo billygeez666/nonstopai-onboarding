@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { generateWebsiteContent, sanitizeEditableText, validateBusinessInput } from './websiteMachine.js'
+import { generateWebsiteContent, renderStaticWebsite, sanitizeEditableText, validateBusinessInput } from './websiteMachine.js'
 
 const garage = {
   businessName: 'Northstar Motor Works',
@@ -43,4 +43,13 @@ test('caps lengths, rejects excessive fact counts, and sanitizes edited copy', (
   assert.ok(result.errors.verifiedInfo)
   assert.equal(sanitizeEditableText('  safe\u0000 copy  '), 'safe copy')
   assert.equal(sanitizeEditableText('x'.repeat(400)).length, 300)
+})
+
+test('exports a fixed, escaped static template without executing supplied markup', () => {
+  const result = generateWebsiteContent({ ...garage, verifiedInfo: '<script>alert("x")</script>' })
+  const html = renderStaticWebsite(result.content)
+  assert.match(html, /&lt;script&gt;alert\(&quot;x&quot;\)&lt;\/script&gt;/)
+  assert.doesNotMatch(html, /<script>/i)
+  assert.match(html, /name="robots" content="noindex,nofollow"/)
+  assert.match(html, /@media\(max-width:600px\)/)
 })
