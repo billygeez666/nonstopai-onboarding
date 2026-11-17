@@ -5,6 +5,7 @@ import { readFileSync } from 'node:fs'
 const commerce = readFileSync(new URL('../../supabase/migrations/202611160003_website_machine_orders_and_sites.sql', import.meta.url), 'utf8')
 const oneOff = readFileSync(new URL('../../supabase/migrations/202611160004_website_machine_99_test_only.sql', import.meta.url), 'utf8')
 const testerAllowlist = readFileSync(new URL('../../supabase/migrations/20261116223008_website_machine_staging_checkout_tester_allowlist.sql', import.meta.url), 'utf8')
+const emailDelivery = readFileSync(new URL('../../supabase/migrations/20261117144545_website_machine_email_delivery_tracking.sql', import.meta.url), 'utf8')
 
 test('commerce migration seeds and leaves every Website Machine Stripe offer inactive', () => {
   const offerInsert = commerce.match(/insert into public\.wm_offer_prices[\s\S]*?on conflict \(mode, purpose\) do nothing;/i)?.[0]
@@ -64,4 +65,22 @@ test('staging tester allowlist is private, empty-by-default, and enforced in bot
   assert.match(orderRpc, /wm_internal\.wm_staging_checkout_testers[\s\S]*?user_id = v_owner[\s\S]*?t\.enabled[\s\S]*?staging tester access required/i)
   assert.ok(orderRpc.indexOf('staging tester access required') < orderRpc.indexOf('insert into public.wm_orders'))
   assert.doesNotMatch(testerAllowlist, /update\s+public\.wm_offer_prices|set\s+active\s*=|insert\s+into\s+wm_internal\.wm_staging_checkout_testers/i)
+})
+
+test('email migration tracks provider outcomes privately and does not mark deployment as email delivery', () => {
+  assert.match(emailDelivery, /create table if not exists public\.wm_delivery_emails/i)
+  assert.match(emailDelivery, /order_id uuid primary key references public\.wm_orders/i)
+  assert.match(emailDelivery, /status in \('pending','accepted','failed','unknown'\)/i)
+  assert.match(emailDelivery, /provider_message_id text/i)
+  assert.match(emailDelivery, /alter table public\.wm_delivery_emails enable row level security/i)
+  assert.match(emailDelivery, /revoke all on public\.wm_delivery_emails from public, anon, authenticated/i)
+  assert.match(emailDelivery, /LEGACY_EMAIL_OUTCOME_UNVERIFIED/i)
+  assert.match(emailDelivery, /update public\.wm_orders o set status='delivering'/i)
+  assert.match(emailDelivery, /create or replace function public\.wm_claim_delivery_email/i)
+  assert.match(emailDelivery, /create or replace function public\.wm_finish_delivery_email/i)
+  assert.match(emailDelivery, /if p_outcome='accepted' then[\s\S]*?update public\.wm_orders o set status='delivered'/i)
+  assert.match(emailDelivery, /lease_expires_at > now\(\)[\s\S]*?shouldSend',false/i)
+  assert.match(emailDelivery, /v_delivery\.status='unknown'[\s\S]*?shouldSend',false/i)
+  assert.doesNotMatch(emailDelivery, /\b(delete from|truncate|drop table)\b/i)
+  assert.doesNotMatch(emailDelivery, /update public\.wm_offer_prices|set\s+active\s*=/i)
 })

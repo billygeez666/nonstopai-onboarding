@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "npm test && vite build",
     "test": "node --test src/lib/*.test.js",
-    "lint": "oxlint",
+    "lint": "oxlint src netlify/functions",
     "preview": "vite preview"
   },
   "dependencies": {

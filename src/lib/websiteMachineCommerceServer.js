@@ -339,6 +339,23 @@ export function createWebsiteMachineStripeWebhookHandler({ env = process.env, fe
         p_verified_deploy_url: site.verifiedDeployUrl, p_signature: signature(message, config.rpcSecret),
       })
     },
+    claimDeliveryEmail: async ({ orderId, mode }) => {
+      const message = `${mode}\nclaim_delivery_email:${orderId}`
+      return rpc('wm_claim_delivery_email', {
+        p_order_id: orderId, p_mode: mode, p_signature: signature(message, config.rpcSecret),
+      })
+    },
+    finishDeliveryEmail: async ({ orderId, mode, attemptId, outcome, messageId = null, errorCode = null }) => {
+      const safeMessageId = typeof messageId === 'string' ? messageId : ''
+      const safeErrorCode = typeof errorCode === 'string' ? errorCode : ''
+      const message = [mode, orderId, attemptId, outcome, safeMessageId, safeErrorCode].join('\n')
+      const saved = await rpc('wm_finish_delivery_email', {
+        p_order_id: orderId, p_mode: mode, p_attempt_id: attemptId, p_outcome: outcome,
+        p_provider_message_id: safeMessageId || null, p_error_code: safeErrorCode || null,
+        p_signature: signature(message, config.rpcSecret),
+      })
+      if (saved !== true) throw new Error('Website Machine email delivery state could not be saved.')
+    },
     sendDeliveryEmail: createWebsiteMachineDeliveryEmail({ apiKey: config.deliveryEmailApiKey, from: config.deliveryFromEmail, fetchImpl }),
   })
 }

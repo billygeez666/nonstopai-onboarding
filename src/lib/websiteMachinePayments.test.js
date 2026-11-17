@@ -25,6 +25,31 @@ function signedEvent(event, webhookSecret = secret, timestamp = Math.floor(now /
   return { raw, signature: `t=${timestamp},v1=${digest}` }
 }
 
+function deliveryStore() {
+  let status = null
+  let attemptCount = 0
+  let attemptId
+  return {
+    claim: async () => {
+      if (status === 'accepted' || status === 'unknown' || status === 'pending') return { status, shouldSend: false }
+      status = 'pending'
+      attemptId = `attempt-${++attemptCount}`
+      return { status, shouldSend: true, attemptId }
+    },
+    finish: async ({ attemptId: submittedAttempt, outcome }) => {
+      if (submittedAttempt !== attemptId || !['pending', 'unknown'].includes(status)) return false
+      status = outcome
+      return true
+    },
+    get status() { return status },
+    get attempts() { return attemptCount },
+  }
+}
+
+function emailState(store = deliveryStore()) {
+  return { store, claimDeliveryEmail: store.claim, finishDeliveryEmail: store.finish }
+}
+
 test('Stripe webhook verification requires a valid, recent HMAC signature', () => {
   const event = { id: 'evt_test_event', object: 'event', type: 'checkout.session.completed', livemode: false, data: { object: { id: baseSession.id } } }
   const { raw, signature } = signedEvent(event)
@@ -166,6 +191,7 @@ test('Stripe webhook does not fulfill unpaid sessions and only publishes once co
   let paid = false
   let publishCalls = 0
   const publisher = { publishPaidProject: async (input) => { publishCalls += 1; assert.equal(input.paid, true); return { siteId: 'netlify-site-123', deployId: '0123456789abcdef' } } }
+  const emailStateForTest = emailState()
   const handler = createStripeWebsiteMachineWebhook({
     env: { WM_STRIPE_SECRET_KEY: apiKey, WM_STRIPE_WEBHOOK_SECRET: secret, WM_STRIPE_LIVEMODE: 'false' },
     now: () => now,
@@ -174,6 +200,7 @@ test('Stripe webhook does not fulfill unpaid sessions and only publishes once co
     publisher,
     sendDeliveryEmail: async () => {},
     recordDeployment: async () => {},
+    ...emailStateForTest,
     fetchImpl: async () => ({ ok: true, json: async () => ({ ...baseSession, payment_status: 'unpaid' }) }),
   })
   let response = await handler({ httpMethod: 'POST', body: raw.toString(), headers: { 'stripe-signature': signature } })
@@ -188,6 +215,7 @@ test('Stripe webhook does not fulfill unpaid sessions and only publishes once co
     confirmPaidOrder: async () => ({ paid: true }),
     recordDeployment: async () => {},
     sendDeliveryEmail: async ({ to, deliveryUrl }) => { assert.equal(to, 'synthetic@example.test'); assert.equal(deliveryUrl, 'https://northstar.netlify.app') },
+    ...emailState(),
     publisher: { publishPaidProject: async (input) => { publishCalls += 1; assert.equal(input.paid, true); return { siteId: 'netlify-site-123', deployId: '0123456789abcdef', url: 'https://northstar.netlify.app' } } },
     fetchImpl: async () => ({ ok: true, json: async () => baseSession }),
   })
@@ -218,6 +246,7 @@ test('synthetic £99 purchase flows from Checkout through signed fulfillment, is
   const event = { id: 'evt_synthetic_purchase', object: 'event', type: 'checkout.session.completed', livemode: false, data: { object: { id: checkoutSession.id, metadata: checkoutSession.metadata } } }
   const signed = signedEvent(event)
   const actions = []
+  const emailStateForTest = emailState()
   const webhook = createStripeWebsiteMachineWebhook({
     env: { WM_STRIPE_SECRET_KEY: apiKey, WM_STRIPE_WEBHOOK_SECRET: secret, WM_STRIPE_LIVEMODE: 'false' },
     now: () => now,
@@ -226,6 +255,7 @@ test('synthetic £99 purchase flows from Checkout through signed fulfillment, is
     publisher: { publishPaidProject: async ({ paid }) => { assert.equal(paid, true); actions.push('published'); return { siteId: 'wm-site-synthetic', deployId: '0123456789abcdef', url: 'https://northstar-motor-works.netlify.app' } } },
     recordDeployment: async () => { actions.push('recorded') },
     sendDeliveryEmail: async ({ to, deliveryUrl }) => { assert.equal(to, 'synthetic@example.test'); assert.equal(deliveryUrl, 'https://northstar-motor-works.netlify.app'); actions.push('emailed') },
+    ...emailStateForTest,
     fetchImpl: async () => ({ ok: true, json: async () => checkoutSession }),
   })
   const delivered = await webhook({ httpMethod: 'POST', body: signed.raw.toString(), headers: { 'stripe-signature': signed.signature } })
@@ -245,6 +275,7 @@ test('failed asynchronous payment is acknowledged without order confirmation, pu
     publisher: { publishPaidProject: async () => { calls += 1 } },
     recordDeployment: async () => { calls += 1 },
     sendDeliveryEmail: async () => { calls += 1 },
+    ...emailState(),
   })
   const response = await handler({ httpMethod: 'POST', body: signed.raw.toString(), headers: { 'stripe-signature': signed.signature } })
   assert.equal(response.statusCode, 200)
@@ -270,6 +301,7 @@ test('webhook retry recovers after a temporary publisher failure without prematu
     } },
     recordDeployment: async () => { records += 1 },
     sendDeliveryEmail: async () => { sentEmails += 1 },
+    ...emailState(),
     fetchImpl: async () => ({ ok: true, json: async () => baseSession }),
   })
   const request = { httpMethod: 'POST', body: signed.raw.toString(), headers: { 'stripe-signature': signed.signature } }
@@ -296,6 +328,7 @@ test('a Netlify access restriction is logged safely and cannot record delivery o
     publisher: { publishPaidProject: async () => { const error = new Error('private'); error.code = 'CUSTOMER_SITE_ACCESS_RESTRICTED'; error.stage = 'netlify_public_verify'; error.status = 401; throw error } },
     recordDeployment: async () => { recorded += 1 },
     sendDeliveryEmail: async () => { emailed += 1 },
+    ...emailState(),
     fetchImpl: async () => ({ ok: true, json: async () => baseSession }),
   })
 
@@ -307,12 +340,13 @@ test('a Netlify access restriction is logged safely and cannot record delivery o
   assert.deepEqual(logs, [['website_machine_fulfillment_failed', { stage: 'netlify_public_verify', code: 'CUSTOMER_SITE_ACCESS_RESTRICTED', status: 401 }]])
 })
 
-test('duplicate delivered webhook does not republish and reuses delivery email idempotency key', async () => {
+test('duplicate delivered webhook reuses the existing deployment and sends one idempotent delivery email', async () => {
   const event = { id: 'evt_test_duplicate_1234', object: 'event', type: 'checkout.session.completed', livemode: false, data: { object: { id: baseSession.id, metadata: baseSession.metadata } } }
   const signed = signedEvent(event)
   const providerSent = new Map()
   let publishCalls = 0
   let providerCalls = 0
+  const emailStateForTest = emailState()
   const sendEmail = async ({ to, businessName, deliveryUrl, orderId: id }) => {
     const sender = createWebsiteMachineDeliveryEmail({ apiKey: 're_test_key', from: 'sites@example.test', fetchImpl: async (_url, options) => {
       providerCalls += 1
@@ -325,24 +359,76 @@ test('duplicate delivered webhook does not republish and reuses delivery email i
   const handler = createStripeWebsiteMachineWebhook({
     env: { WM_STRIPE_SECRET_KEY: apiKey, WM_STRIPE_WEBHOOK_SECRET: secret },
     now: () => now,
-    loadOrder: async () => ({ id: orderId, projectId, ownerId, setupPriceId, mode: 'test', content: { businessName: 'Northstar' }, siteRecord: { siteUrl: 'https://northstar.netlify.app' } }),
-    confirmPaidOrder: async () => ({ paid: true, delivered: true, siteRecord: { siteUrl: 'https://northstar.netlify.app' } }),
-    publisher: { publishPaidProject: async () => { publishCalls += 1 } },
+    loadOrder: async () => ({ id: orderId, projectId, ownerId, setupPriceId, mode: 'test', content: { businessName: 'Northstar' }, siteRecord: { siteUrl: 'https://northstar.netlify.app', currentDeployId: '0123456789abcdef' } }),
+    confirmPaidOrder: async () => ({ paid: true, delivered: false, siteRecord: { siteUrl: 'https://northstar.netlify.app', currentDeployId: '0123456789abcdef' } }),
+    publisher: { publishPaidProject: async ({ siteRecord }) => { assert.equal(siteRecord.currentDeployId, '0123456789abcdef'); publishCalls += 1; return { url: 'https://northstar.netlify.app', siteId: 'existing-site-id', deployId: '0123456789abcdef' } } },
     recordDeployment: async () => {},
     sendDeliveryEmail: sendEmail,
+    ...emailStateForTest,
     fetchImpl: async () => ({ ok: true, json: async () => baseSession }),
   })
   const request = { httpMethod: 'POST', body: signed.raw.toString(), headers: { 'stripe-signature': signed.signature } }
   assert.equal((await handler(request)).statusCode, 200)
   assert.equal((await handler(request)).statusCode, 200)
-  assert.equal(publishCalls, 0)
-  assert.equal(providerCalls, 2)
+  assert.equal(publishCalls, 2) // Both invocations reuse the persisted deployment id; neither creates a site.
+  assert.equal(providerCalls, 1)
   assert.equal(providerSent.size, 1)
+})
+
+test('known Resend rejection remains recoverable and a later webhook retry completes email once', async () => {
+  const event = { id: 'evt_test_email_recover_1234', object: 'event', type: 'checkout.session.completed', livemode: false, data: { object: { id: baseSession.id, metadata: baseSession.metadata } } }
+  const signed = signedEvent(event)
+  const persistence = emailState()
+  let emailAttempts = 0
+  let publishCalls = 0
+  const handler = createStripeWebsiteMachineWebhook({
+    env: { WM_STRIPE_SECRET_KEY: apiKey, WM_STRIPE_WEBHOOK_SECRET: secret }, now: () => now,
+    loadOrder: async () => ({ id: orderId, projectId, ownerId, setupPriceId, mode: 'test', content: { businessName: 'Northstar' }, siteRecord: { siteUrl: 'https://northstar.netlify.app', currentDeployId: '0123456789abcdef' } }),
+    confirmPaidOrder: async () => ({ paid: true, delivered: false, siteRecord: { siteUrl: 'https://northstar.netlify.app', currentDeployId: '0123456789abcdef' } }),
+    publisher: { publishPaidProject: async () => { publishCalls += 1; return { url: 'https://northstar.netlify.app', siteId: 'existing-site-id', deployId: '0123456789abcdef' } } },
+    recordDeployment: async () => {},
+    sendDeliveryEmail: async () => {
+      emailAttempts += 1
+      if (emailAttempts === 1) { const error = new Error('Resend rejected'); error.deliveryOutcome = 'failed'; error.code = 'RESEND_REJECTED'; error.stage = 'resend_email'; throw error }
+      return { sent: true, messageId: 'resend-message-recovered' }
+    },
+    ...persistence,
+    fetchImpl: async () => ({ ok: true, json: async () => baseSession }),
+  })
+  const request = { httpMethod: 'POST', body: signed.raw.toString(), headers: { 'stripe-signature': signed.signature } }
+  assert.equal((await handler(request)).statusCode, 500)
+  assert.equal(persistence.store.status, 'failed')
+  assert.equal((await handler(request)).statusCode, 200)
+  assert.equal(persistence.store.status, 'accepted')
+  assert.equal(emailAttempts, 2)
+  assert.equal(publishCalls, 2) // Publisher receives the stored existing site and reuses its deployment.
+})
+
+test('ambiguous Resend timeout is recorded unknown and duplicate webhook does not blindly resend', async () => {
+  const event = { id: 'evt_test_email_unknown_1234', object: 'event', type: 'checkout.session.completed', livemode: false, data: { object: { id: baseSession.id, metadata: baseSession.metadata } } }
+  const signed = signedEvent(event)
+  const persistence = emailState()
+  let emailAttempts = 0
+  const handler = createStripeWebsiteMachineWebhook({
+    env: { WM_STRIPE_SECRET_KEY: apiKey, WM_STRIPE_WEBHOOK_SECRET: secret }, now: () => now,
+    loadOrder: async () => ({ id: orderId, projectId, ownerId, setupPriceId, mode: 'test', content: { businessName: 'Northstar' } }),
+    confirmPaidOrder: async () => ({ paid: true, delivered: false }),
+    publisher: { publishPaidProject: async () => ({ url: 'https://northstar.netlify.app', siteId: 'existing-site-id', deployId: '0123456789abcdef' }) },
+    recordDeployment: async () => {},
+    sendDeliveryEmail: async () => { emailAttempts += 1; const error = new Error('uncertain'); error.deliveryOutcome = 'unknown'; error.code = 'RESEND_OUTCOME_UNKNOWN'; throw error },
+    ...persistence,
+    fetchImpl: async () => ({ ok: true, json: async () => baseSession }),
+  })
+  const request = { httpMethod: 'POST', body: signed.raw.toString(), headers: { 'stripe-signature': signed.signature } }
+  assert.equal((await handler(request)).statusCode, 200)
+  assert.match((await handler(request)).body, /requires reconciliation/)
+  assert.equal(persistence.store.status, 'unknown')
+  assert.equal(emailAttempts, 1)
 })
 
 test('bad Stripe signature never calls the database or publisher', async () => {
   let calls = 0
-  const handler = createStripeWebsiteMachineWebhook({ env: { WM_STRIPE_SECRET_KEY: apiKey, WM_STRIPE_WEBHOOK_SECRET: secret }, loadOrder: async () => { calls += 1 }, confirmPaidOrder: async () => {}, publisher: {}, recordDeployment: async () => {}, sendDeliveryEmail: async () => {} })
+  const handler = createStripeWebsiteMachineWebhook({ env: { WM_STRIPE_SECRET_KEY: apiKey, WM_STRIPE_WEBHOOK_SECRET: secret }, loadOrder: async () => { calls += 1 }, confirmPaidOrder: async () => {}, publisher: {}, recordDeployment: async () => {}, sendDeliveryEmail: async () => {}, ...emailState() })
   const response = await handler({ httpMethod: 'POST', body: '{}', headers: { 'stripe-signature': 't=1,v1=bad' } })
   assert.equal(response.statusCode, 400)
   assert.equal(calls, 0)

@@ -134,13 +134,15 @@ export function createStripeWebsiteMachineWebhook({
   confirmPaidOrder,
   publisher,
   recordDeployment,
+  claimDeliveryEmail,
+  finishDeliveryEmail,
   sendDeliveryEmail,
   now = () => Date.now(),
   logger = console,
 } = {}) {
   return async (event) => {
     if (event.httpMethod !== 'POST') return { statusCode: 405, body: 'Method not allowed.' }
-    if (!isStripeTestSecretKey(env.WM_STRIPE_SECRET_KEY) || env.WM_STRIPE_LIVEMODE === 'true' || !env.WM_STRIPE_WEBHOOK_SECRET || typeof loadOrder !== 'function' || typeof confirmPaidOrder !== 'function' || !publisher || typeof recordDeployment !== 'function' || typeof sendDeliveryEmail !== 'function') {
+    if (!isStripeTestSecretKey(env.WM_STRIPE_SECRET_KEY) || env.WM_STRIPE_LIVEMODE === 'true' || !env.WM_STRIPE_WEBHOOK_SECRET || typeof loadOrder !== 'function' || typeof confirmPaidOrder !== 'function' || !publisher || typeof recordDeployment !== 'function' || typeof claimDeliveryEmail !== 'function' || typeof finishDeliveryEmail !== 'function' || typeof sendDeliveryEmail !== 'function') {
       return { statusCode: 503, body: 'Website Machine payment fulfillment is not configured.' }
     }
     try {
@@ -174,11 +176,29 @@ export function createStripeWebsiteMachineWebhook({
 
       const confirmed = await confirmPaidOrder({ eventId: stripeEvent.id, session, order })
       if (confirmed?.paid !== true) return { statusCode: 409, body: 'Paid order confirmation was not recorded.' }
+      const deliverEmail = async (siteUrl) => {
+        const recipient = session.customer_details?.email || session.customer_email
+        if (!siteUrl || !recipient) throw new Error('Verified website or Checkout email is unavailable.')
+        const claim = await claimDeliveryEmail({ orderId: order.id, mode: order.mode })
+        if (claim?.status === 'accepted') return 'accepted'
+        if (claim?.shouldSend !== true || !claim.attemptId) return claim?.status || 'unknown'
+        try {
+          const result = await sendDeliveryEmail({ to: recipient, businessName: order.content?.businessName || 'Your business', deliveryUrl: siteUrl, orderId: order.id })
+          await finishDeliveryEmail({ orderId: order.id, mode: order.mode, attemptId: claim.attemptId, outcome: 'accepted', messageId: result?.messageId || null })
+          return 'accepted'
+        } catch (error) {
+          const outcome = error?.deliveryOutcome === 'failed' ? 'failed' : 'unknown'
+          await finishDeliveryEmail({ orderId: order.id, mode: order.mode, attemptId: claim.attemptId, outcome, errorCode: error?.code || 'DELIVERY_EMAIL_FAILED' })
+          if (outcome === 'failed') throw error
+          return 'unknown'
+        }
+      }
       if (confirmed.delivered === true) {
         const siteUrl = confirmed.siteRecord?.siteUrl || order.siteRecord?.siteUrl
-        if (!siteUrl || !session.customer_details?.email && !session.customer_email) return { statusCode: 500, body: 'Delivery email details are unavailable; retry after order state is restored.' }
-        await sendDeliveryEmail({ to: session.customer_details?.email || session.customer_email, businessName: order.content?.businessName || 'Your business', deliveryUrl: siteUrl, orderId: order.id })
-        return { statusCode: 200, body: 'Order already delivered; delivery email confirmed.' }
+        const status = await deliverEmail(siteUrl)
+        if (status === 'unknown') return { statusCode: 200, body: 'Website is published; email outcome requires reconciliation.' }
+        if (status === 'pending') return { statusCode: 200, body: 'Website is published; email delivery is already in progress.' }
+        return { statusCode: 200, body: 'Website is published and delivery email is accepted.' }
       }
       const site = await publisher.publishPaidProject({
         paid: true,
@@ -190,10 +210,10 @@ export function createStripeWebsiteMachineWebhook({
         siteRecord: confirmed.siteRecord || order.siteRecord || null,
       })
       await recordDeployment({ eventId: stripeEvent.id, order, site })
-      const email = session.customer_details?.email || session.customer_email
-      if (!email) throw new Error('Stripe Checkout did not provide a customer email.')
-      await sendDeliveryEmail({ to: email, businessName: order.content?.businessName || 'Your business', deliveryUrl: site.url, orderId: order.id })
-      return { statusCode: 200, body: 'Paid Website Machine order delivered.' }
+      const status = await deliverEmail(site.url)
+      if (status === 'unknown') return { statusCode: 200, body: 'Website is published; email outcome requires reconciliation.' }
+      if (status === 'pending') return { statusCode: 200, body: 'Website is published; email delivery is already in progress.' }
+      return { statusCode: 200, body: 'Paid Website Machine website published and delivery email accepted.' }
     } catch (error) {
       const code = typeof error?.code === 'string' && /^[A-Z0-9_]{1,80}$/.test(error.code) ? error.code : 'FULFILLMENT_FAILED'
       const stage = typeof error?.stage === 'string' && /^[a-z0-9_]{1,80}$/.test(error.stage) ? error.stage : 'fulfillment'

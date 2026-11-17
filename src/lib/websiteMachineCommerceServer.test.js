@@ -66,6 +66,57 @@ test('staging accepts the configured Stripe secret names while still requiring a
   assert.equal((await unsafe({ httpMethod: 'POST', body: '{}' })).statusCode, 503)
 })
 
+test('staging webhook persists Resend acceptance and provider id through signed private RPCs', async () => {
+  const orderId = 'c2e671de-dfd5-4b1c-9f83-d9a92d852a01'
+  const projectId = 'a5bd4cb4-8467-4cc6-b769-16087d180fc6'
+  const ownerId = 'f3765312-550e-436b-8fea-9d3dc42a1167'
+  const rpcSecret = 's'.repeat(40)
+  const webhookSecret = 'whsec_' + 'w'.repeat(40)
+  const session = {
+    id: 'cs_test_delivery_12345678', object: 'checkout.session', livemode: false, status: 'complete', payment_status: 'paid', mode: 'payment',
+    currency: 'gbp', amount_total: 9900, client_reference_id: orderId, customer_details: { email: 'synthetic@example.test' },
+    metadata: { wm_order_id: orderId, wm_project_id: projectId, wm_owner_id: ownerId },
+    line_items: { data: [{ quantity: 1, amount_total: 9900, price: { id: 'price_test_99', recurring: null } }] },
+  }
+  const event = { id: 'evt_test_delivery_tracking', type: 'checkout.session.completed', livemode: false, data: { object: { id: session.id, metadata: session.metadata } } }
+  const raw = Buffer.from(JSON.stringify(event))
+  const timestamp = Math.floor(Date.now() / 1000)
+  const signed = createHmac('sha256', webhookSecret).update(`${timestamp}.`).update(raw).digest('hex')
+  const calls = []
+  const handler = createWebsiteMachineStripeWebhookHandler({ env: {
+    WM_RUNTIME_ENV: 'staging', WM_STAGING_SUPABASE_URL: supabase,
+    WM_STAGING_SUPABASE_PUBLISHABLE_KEY: 'staging-publishable', WM_STAGING_PUBLIC_URL: 'https://bendarus.netlify.app',
+    STRIPE_SECRET_KEY: 'sk_test_staging', STRIPE_WEBHOOK_SECRET: webhookSecret, STRIPE_PRICE_ID: 'price_test_99',
+    WM_STAGING_PAYMENT_RPC_SECRET: rpcSecret, WM_STAGING_NETLIFY_CUSTOMER_TOKEN: 'dedicated-staging-token',
+    WM_STAGING_NETLIFY_ACCOUNT_SLUG: 'website-machine', WM_STAGING_EMAIL_API_KEY: 're_test_key',
+    WM_STAGING_DELIVERY_FROM_EMAIL: 'sites@example.test',
+  }, fetchImpl: async (url, options = {}) => {
+    calls.push({ url, options })
+    if (url.startsWith('https://api.stripe.com/v1/checkout/sessions/')) return { ok: true, json: async () => session }
+    if (url.endsWith('/rpc/wm_get_payment_order')) return { ok: true, json: async () => ({
+      id: orderId, projectId, ownerId, mode: 'test', setupPriceId: 'price_test_99', amountTotal: 9900,
+      currency: 'gbp', checkoutSessionId: session.id, status: 'delivering', content: { businessName: 'Synthetic Garage' },
+      siteRecord: { project_id: projectId, owner_id: ownerId, site_id: 'dde29a46-a3d5-4dec-963b-1304b1c85e1f',
+        site_name: `wm-${projectId.replaceAll('-', '')}`, site_url: 'https://synthetic-garage.netlify.app',
+        current_deploy_id: '0123456789abcdef', previous_deploy_ids: [] },
+    }) }
+    if (url.endsWith('/rpc/wm_confirm_paid_order')) return { ok: true, json: async () => ({ paid: true, delivered: true }) }
+    if (url.endsWith('/rpc/wm_claim_delivery_email')) return { ok: true, json: async () => ({ status: 'pending', shouldSend: true, attemptId: 'e7d42ed9-7765-4937-b415-fb0923ef3331' }) }
+    if (url === 'https://api.resend.com/emails') return { ok: true, json: async () => ({ id: 're_accepted_message_1' }) }
+    if (url.endsWith('/rpc/wm_finish_delivery_email')) return { ok: true, json: async () => true }
+    throw new Error(`Unexpected request ${url}`)
+  } })
+  const response = await handler({ httpMethod: 'POST', body: raw.toString(), headers: { 'stripe-signature': `t=${timestamp},v1=${signed}` } })
+  assert.equal(response.statusCode, 200, response.body)
+  assert.match(response.body, /delivery email is accepted/)
+  const rpcCalls = calls.filter((call) => call.url.includes('/rpc/'))
+  assert.deepEqual(rpcCalls.map((call) => call.url.split('/').at(-1)), ['wm_get_payment_order', 'wm_confirm_paid_order', 'wm_claim_delivery_email', 'wm_finish_delivery_email'])
+  const finish = JSON.parse(rpcCalls.at(-1).options.body)
+  assert.equal(finish.p_outcome, 'accepted')
+  assert.equal(finish.p_provider_message_id, 're_accepted_message_1')
+  assert.equal(finish.p_signature.length, 64)
+})
+
 test('staging checkout asks the self-only tester RPC before reading the owner project', async () => {
   const env = {
     WM_RUNTIME_ENV: 'staging', WM_STAGING_SUPABASE_URL: supabase,
