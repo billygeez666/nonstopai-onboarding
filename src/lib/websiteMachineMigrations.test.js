@@ -7,8 +7,8 @@ const oneOff = readFileSync(new URL('../../supabase/migrations/202611160004_webs
 const testerAllowlist = readFileSync(new URL('../../supabase/migrations/20261116223008_website_machine_staging_checkout_tester_allowlist.sql', import.meta.url), 'utf8')
 const emailDelivery = readFileSync(new URL('../../supabase/migrations/20261117150122_website_machine_email_delivery_tracking.sql', import.meta.url), 'utf8')
 const emailRecovery = readFileSync(new URL('../../supabase/migrations/20261117163153_website_machine_one_time_email_recovery_20261117.sql', import.meta.url), 'utf8')
-const checkoutIdempotency = readFileSync(new URL('../../supabase/migrations/20261117220000_website_machine_project_checkout_idempotency.sql', import.meta.url), 'utf8')
-const liveStarterMapping = readFileSync(new URL('../../supabase/migrations/20261117221000_website_machine_live_starter_price_mapping.sql', import.meta.url), 'utf8')
+const checkoutIdempotency = readFileSync(new URL('../../supabase/migrations/20261117220611_website_machine_project_checkout_idempotency.sql', import.meta.url), 'utf8')
+const liveStarterMapping = readFileSync(new URL('../../supabase/migrations/20261117220837_website_machine_live_starter_price_mapping.sql', import.meta.url), 'utf8')
 
 test('commerce migration seeds and leaves every Website Machine Stripe offer inactive', () => {
   const offerInsert = commerce.match(/insert into public\.wm_offer_prices[\s\S]*?on conflict \(mode, purpose\) do nothing;/i)?.[0]
