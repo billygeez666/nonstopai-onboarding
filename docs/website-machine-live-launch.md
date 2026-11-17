@@ -4,6 +4,7 @@
 
 - The selected live offer is the existing Stripe price `price_1TtvtIEWP0eV3FnnXUMIwPwG`: GBP 99, one-time, live mode. No Stripe product, price, or payment link was created or changed.
 - Supabase maps that price to the Website Machine `live/setup` row, which remains inactive. No live Website Machine orders exist.
+- Stripe currently has two active Payment Links containing this same £99 price (`plink_1UIchqEWP0eV3Fnn4OFiVjnS` and `plink_1TtvvUEWP0eV3FnnnwwZukZ2`). They bypass the Supabase Website Machine checkout gate and could accept payments without this fulfillment flow. They were left unchanged; review and deactivate them before claiming that every live sales route is disabled.
 - Live Checkout and fulfillment code is present, but checkout remains gated by the inactive Supabase row. Payment confirmation also fails closed unless the separate production HMAC secret exists in Supabase Vault.
 - `bendarus.netlify.app` is staging. Do not set it to production mode and do not copy production values into its staging context.
 
