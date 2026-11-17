@@ -136,6 +136,7 @@ export function createStripeWebsiteMachineWebhook({
   recordDeployment,
   sendDeliveryEmail,
   now = () => Date.now(),
+  logger = console,
 } = {}) {
   return async (event) => {
     if (event.httpMethod !== 'POST') return { statusCode: 405, body: 'Method not allowed.' }
@@ -193,7 +194,11 @@ export function createStripeWebsiteMachineWebhook({
       if (!email) throw new Error('Stripe Checkout did not provide a customer email.')
       await sendDeliveryEmail({ to: email, businessName: order.content?.businessName || 'Your business', deliveryUrl: site.url, orderId: order.id })
       return { statusCode: 200, body: 'Paid Website Machine order delivered.' }
-    } catch {
+    } catch (error) {
+      const code = typeof error?.code === 'string' && /^[A-Z0-9_]{1,80}$/.test(error.code) ? error.code : 'FULFILLMENT_FAILED'
+      const stage = typeof error?.stage === 'string' && /^[a-z0-9_]{1,80}$/.test(error.stage) ? error.stage : 'fulfillment'
+      const status = Number.isInteger(error?.status) && error.status >= 100 && error.status <= 599 ? error.status : undefined
+      logger.error?.('website_machine_fulfillment_failed', { stage, code, ...(status ? { status } : {}) })
       return { statusCode: 500, body: 'Payment fulfillment failed and can be safely retried.' }
     }
   }

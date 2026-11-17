@@ -25,10 +25,19 @@ test('domain challenge checks the exact TXT token and fails closed on DNS errors
 })
 
 test('static site archive is a ZIP containing only a fixed index.html document', () => {
-  const zip = makeStaticWebsiteZip('<!doctype html><h1>test</h1>')
+  const html = '<!doctype html><html><head><title>test</title></head><body><h1>test</h1></body></html>'
+  const zip = makeStaticWebsiteZip(html)
   assert.equal(zip.readUInt32LE(0), 0x04034b50)
-  assert.equal(zip.toString('utf8').includes('index.html'), true)
-  assert.equal(zip.toString('utf8').includes('<script'), false)
+  const nameLength = zip.readUInt16LE(26)
+  const extraLength = zip.readUInt16LE(28)
+  const name = zip.subarray(30, 30 + nameLength).toString('utf8')
+  const bodyStart = 30 + nameLength + extraLength
+  const bodyLength = zip.readUInt32LE(22)
+  assert.equal(name, 'index.html')
+  assert.equal(zip.readUInt16LE(8), 0, 'HTML entry uses ZIP store mode without transformations')
+  assert.equal(zip.subarray(bodyStart, bodyStart + bodyLength).toString('utf8'), html)
+  assert.match(html, /^<!doctype html>/i)
+  assert.equal(html.includes('<script'), false)
 })
 
 test('unpaid projects cannot create a Netlify site', async () => {
@@ -67,6 +76,71 @@ test('site creation requires durable association and records a new isolated site
   assert.equal(calls[4].options.method, 'PUT')
   assert.equal(calls[4].options.headers['content-type'], 'application/zip')
   assert.equal(calls.every((call) => !call.url.endsWith('/sites')), true)
+})
+
+test('a retry verifies and reuses an already published deployment instead of uploading another', async () => {
+  const siteName = `wm-${projectId.replaceAll('-', '')}`
+  const deployId = '6afb9ee4f72fcc6eeefea8d8'
+  const deployUrl = `https://${deployId}--${siteName}.netlify.app`
+  const calls = []
+  const siteRecord = { projectId, ownerId, siteId, siteName, customDomain: null, currentDeployId: null, previousDeployIds: [] }
+  const fetchImpl = async (url, options = {}) => {
+    calls.push({ url, options })
+    if (url.endsWith('/accounts/nonstopai-website-machine-test')) return { ok: true, status: 200, json: async () => ({ id: accountId }) }
+    if (url === `https://api.netlify.com/api/v1/sites/${siteId}`) {
+      return { ok: true, status: 200, json: async () => ({ id: siteId, account_id: accountId, name: siteName, ssl_url: `https://${siteName}.netlify.app`, published_deploy: { id: deployId } }) }
+    }
+    if (url.endsWith(`/sites/${siteId}/metadata`)) return { ok: true, status: 200, json: async () => ({ website_machine_project_id: projectId }) }
+    if (url.endsWith(`/deploys/${deployId}`)) return { ok: true, status: 200, json: async () => ({ id: deployId, site_id: siteId, state: 'ready', deploy_ssl_url: deployUrl }) }
+    if (url === deployUrl) return { ok: true, status: 200, headers: new Headers({ 'content-type': 'text/html; charset=utf-8' }), text: async () => '<!doctype html><h1>A&amp;B Garage</h1>' }
+    throw new Error(`Unexpected request ${url}`)
+  }
+  const publisher = createNetlifyCustomerPublisher({ env, fetchImpl, persistSite: async () => {} })
+
+  const result = await publisher.publishPaidProject({ paid: true, projectId, ownerId, content, siteRecord })
+
+  assert.equal(result.verified, true)
+  assert.equal(result.reused, true)
+  assert.equal(result.deployId, deployId)
+  assert.equal(result.verifiedDeployUrl, deployUrl)
+  assert.equal(calls.some(({ url, options }) => url.endsWith('/sites/') && options.method === 'POST'), false)
+  assert.equal(calls.some(({ url, options }) => url.endsWith(`/sites/${siteId}`) && options.method === 'PUT'), false)
+})
+
+test('a protected deployment response is not accepted as a verified website', async () => {
+  const siteName = `wm-${projectId.replaceAll('-', '')}`
+  const deployId = '0123456789abcdef01234567'
+  const calls = []
+  const siteRecord = { projectId, ownerId, siteId, siteName, customDomain: null, currentDeployId: null, previousDeployIds: [] }
+  const fetchImpl = async (url, options = {}) => {
+    calls.push({ url, options })
+    if (url.endsWith('/accounts/nonstopai-website-machine-test')) return { ok: true, status: 200, json: async () => ({ id: accountId }) }
+    if (url.endsWith(`/sites/${siteId}/metadata`)) return { ok: true, status: 200, json: async () => ({ website_machine_project_id: projectId }) }
+    if (url.endsWith(`/sites/${siteId}`) && options.method !== 'PUT') {
+      return { ok: true, status: 200, json: async () => ({ id: siteId, account_id: accountId, name: siteName, ssl_url: `https://${siteName}.netlify.app` }) }
+    }
+    if (url.endsWith(`/sites/${siteId}`) && options.method === 'PUT') {
+      return { ok: true, status: 200, json: async () => ({ id: deployId, site_id: siteId, state: 'ready', deploy_ssl_url: `https://${deployId}--${siteName}.netlify.app` }) }
+    }
+    if (url.endsWith(`/deploys/${deployId}`)) {
+      return { ok: true, status: 200, json: async () => ({ id: deployId, site_id: siteId, state: 'ready', deploy_ssl_url: `https://${deployId}--${siteName}.netlify.app` }) }
+    }
+    if (url === `https://${deployId}--${siteName}.netlify.app`) {
+      return { ok: false, status: 401, headers: new Headers({ 'content-type': 'text/html; charset=utf-8' }), text: async () => '<title>Login Redirect</title>' }
+    }
+    throw new Error(`Unexpected request ${url}`)
+  }
+  const publisher = createNetlifyCustomerPublisher({ env, fetchImpl, sleep: async () => {}, persistSite: async () => {} })
+
+  await assert.rejects(publisher.publishPaidProject({ paid: true, projectId, ownerId, content, siteRecord }), (error) => {
+    assert.match(error.message, /access-restricted/)
+    assert.equal(error.code, 'CUSTOMER_SITE_ACCESS_RESTRICTED')
+    assert.equal(error.status, 401)
+    assert.equal(error.stage, 'netlify_public_verify')
+    return true
+  })
+  assert.equal(calls.some(({ url, options }) => url.endsWith('/sites/') && options.method === 'POST'), false, 'reuse the existing isolated site')
+  assert.equal(calls.some(({ url, options }) => url.endsWith(`/sites/${siteId}`) && options.method === 'PUT'), true, 'the deployment itself may be ready while public verification fails')
 })
 
 test('custom domain must be verified and unused before a customer site is created', async () => {

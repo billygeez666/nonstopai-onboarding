@@ -281,6 +281,32 @@ test('webhook retry recovers after a temporary publisher failure without prematu
   assert.equal(sentEmails, 1)
 })
 
+test('a Netlify access restriction is logged safely and cannot record delivery or send email', async () => {
+  const event = { id: 'evt_test_access_blocked', object: 'event', type: 'checkout.session.completed', livemode: false, data: { object: { id: baseSession.id, metadata: baseSession.metadata } } }
+  const signed = signedEvent(event)
+  const logs = []
+  let recorded = 0
+  let emailed = 0
+  const handler = createStripeWebsiteMachineWebhook({
+    env: { WM_STRIPE_SECRET_KEY: apiKey, WM_STRIPE_WEBHOOK_SECRET: secret },
+    now: () => now,
+    logger: { error: (...args) => logs.push(args) },
+    loadOrder: async () => ({ id: orderId, projectId, ownerId, setupPriceId, mode: 'test', content: { businessName: 'Northstar' } }),
+    confirmPaidOrder: async () => ({ paid: true, delivered: false }),
+    publisher: { publishPaidProject: async () => { const error = new Error('private'); error.code = 'CUSTOMER_SITE_ACCESS_RESTRICTED'; error.stage = 'netlify_public_verify'; error.status = 401; throw error } },
+    recordDeployment: async () => { recorded += 1 },
+    sendDeliveryEmail: async () => { emailed += 1 },
+    fetchImpl: async () => ({ ok: true, json: async () => baseSession }),
+  })
+
+  const response = await handler({ httpMethod: 'POST', body: signed.raw.toString(), headers: { 'stripe-signature': signed.signature } })
+
+  assert.equal(response.statusCode, 500)
+  assert.equal(recorded, 0)
+  assert.equal(emailed, 0)
+  assert.deepEqual(logs, [['website_machine_fulfillment_failed', { stage: 'netlify_public_verify', code: 'CUSTOMER_SITE_ACCESS_RESTRICTED', status: 401 }]])
+})
+
 test('duplicate delivered webhook does not republish and reuses delivery email idempotency key', async () => {
   const event = { id: 'evt_test_duplicate_1234', object: 'event', type: 'checkout.session.completed', livemode: false, data: { object: { id: baseSession.id, metadata: baseSession.metadata } } }
   const signed = signedEvent(event)

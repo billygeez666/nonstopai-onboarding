@@ -183,6 +183,68 @@ export function createNetlifyCustomerPublisher({
       }
 
       const html = renderStaticWebsite(safeContent.content)
+      const verifyDeployment = async (deploy) => {
+        if (deploy?.site_id !== site.id || deploy.state !== 'ready') {
+          const error = new Error('Customer deploy is not ready for the isolated Website Machine site.')
+          error.code = 'CUSTOMER_DEPLOY_NOT_READY'
+          error.stage = 'netlify_deploy_verify'
+          throw error
+        }
+        const verifyUrl = deploy.deploy_ssl_url || deploy.ssl_url
+        if (!isNetlifyHttpsUrl(verifyUrl)) {
+          const error = new Error('Customer deploy has no secure Netlify verification URL.')
+          error.code = 'CUSTOMER_DEPLOY_URL_INVALID'
+          error.stage = 'netlify_deploy_verify'
+          throw error
+        }
+        const live = await fetchImpl(verifyUrl, { redirect: 'error' })
+        if (!live.ok) {
+          const error = new Error(live.status === 401 || live.status === 403
+            ? `Customer site is access-restricted (HTTP ${live.status}).`
+            : `Customer deploy could not be fetched (HTTP ${live.status}).`)
+          error.code = live.status === 401 || live.status === 403 ? 'CUSTOMER_SITE_ACCESS_RESTRICTED' : 'CUSTOMER_DEPLOY_HTTP_ERROR'
+          error.status = live.status
+          error.stage = 'netlify_public_verify'
+          throw error
+        }
+        const contentType = live.headers?.get('content-type') || ''
+        if (!contentType.toLowerCase().includes('text/html')) {
+          const error = new Error('Customer deploy did not return HTML content.')
+          error.code = 'CUSTOMER_DEPLOY_MIME_TYPE_INVALID'
+          error.status = live.status
+          error.stage = 'netlify_public_verify'
+          throw error
+        }
+        const liveHtml = await live.text()
+        if (!liveHtml.includes(escapeHtml(safeContent.content.businessName))) {
+          const error = new Error('Deployed customer website failed content verification.')
+          error.code = 'CUSTOMER_DEPLOY_CONTENT_MISMATCH'
+          error.status = live.status
+          error.stage = 'netlify_public_verify'
+          throw error
+        }
+        return verifyUrl
+      }
+
+      // A webhook retry may arrive after Netlify finished the deploy but before
+      // Supabase recorded it. Reuse only the site's current, ready deploy after
+      // checking site ownership, metadata, public access, MIME type, and content.
+      // This avoids creating another deployment during recovery.
+      if (siteRecord && site.published_deploy?.id) {
+        const currentDeploy = await api(`/deploys/${encodeURIComponent(site.published_deploy.id)}`)
+        const verifiedDeployUrl = await verifyDeployment(currentDeploy)
+        return {
+          siteId: site.id,
+          siteName,
+          deployId: currentDeploy.id,
+          previousDeployId: siteRecord.currentDeployId || null,
+          url: customDomain ? `https://${customDomain}` : (site.ssl_url || site.url),
+          verifiedDeployUrl,
+          verified: true,
+          reused: true,
+        }
+      }
+
       const upload = await api(`/sites/${encodeURIComponent(site.id)}`, {
         method: 'PUT',
         headers: { 'content-type': 'application/zip' },
@@ -195,21 +257,14 @@ export function createNetlifyCustomerPublisher({
         await sleep(1000)
         deploy = await api(`/deploys/${encodeURIComponent(upload.id)}`)
       }
-      if (deploy.site_id !== site.id || deploy.state !== 'ready') throw new Error('Customer deploy did not reach the ready state for its isolated site.')
-      const verifyUrl = deploy.deploy_ssl_url || deploy.ssl_url
-      if (!isNetlifyHttpsUrl(verifyUrl)) throw new Error('Customer deploy has no secure Netlify verification URL.')
-      const live = await fetchImpl(verifyUrl, { redirect: 'error' })
-      const liveHtml = await live.text()
-      if (!live.ok || !live.headers.get('content-type')?.includes('text/html') || !liveHtml.includes(escapeHtml(safeContent.content.businessName))) {
-        throw new Error('Deployed customer website failed content verification.')
-      }
+      const verifiedDeployUrl = await verifyDeployment(deploy)
       return {
         siteId: site.id,
         siteName,
         deployId: deploy.id,
         previousDeployId: siteRecord?.currentDeployId || upload.previous_deploy_id || null,
         url: customDomain ? `https://${customDomain}` : (site.ssl_url || site.url),
-        verifiedDeployUrl: verifyUrl,
+        verifiedDeployUrl,
         verified: true,
       }
     },
