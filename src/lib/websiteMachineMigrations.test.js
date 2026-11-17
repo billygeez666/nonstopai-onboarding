@@ -8,6 +8,7 @@ const testerAllowlist = readFileSync(new URL('../../supabase/migrations/20261116
 const emailDelivery = readFileSync(new URL('../../supabase/migrations/20261117150122_website_machine_email_delivery_tracking.sql', import.meta.url), 'utf8')
 const emailRecovery = readFileSync(new URL('../../supabase/migrations/20261117163153_website_machine_one_time_email_recovery_20261117.sql', import.meta.url), 'utf8')
 const checkoutIdempotency = readFileSync(new URL('../../supabase/migrations/20261117220000_website_machine_project_checkout_idempotency.sql', import.meta.url), 'utf8')
+const liveStarterMapping = readFileSync(new URL('../../supabase/migrations/20261117221000_website_machine_live_starter_price_mapping.sql', import.meta.url), 'utf8')
 
 test('commerce migration seeds and leaves every Website Machine Stripe offer inactive', () => {
   const offerInsert = commerce.match(/insert into public\.wm_offer_prices[\s\S]*?on conflict \(mode, purpose\) do nothing;/i)?.[0]
@@ -110,4 +111,14 @@ test('project checkout idempotency migration safely reuses one order per project
   assert.match(checkoutIdempotency, /p_mode is distinct from 'test'/i)
   assert.match(checkoutIdempotency, /p\.active and p\.unit_amount = 9900 and p\.currency = 'gbp' and p\.recurring_interval is null/i)
   assert.doesNotMatch(checkoutIdempotency, /\b(delete from|truncate|drop table|set active\s*=\s*true)\b/i)
+})
+
+test('live Starter Website price mapping reuses the verified £99 price and remains inactive', () => {
+  assert.match(liveStarterMapping, /price_1TtvtIEWP0eV3FnnXUMIwPwG/)
+  assert.match(liveStarterMapping, /prod_UtjLC5f9iSAD94/)
+  assert.match(liveStarterMapping, /unit_amount = 9900/i)
+  assert.match(liveStarterMapping, /active = false/i)
+  assert.match(liveStarterMapping, /if exists \(select 1 from public\.wm_orders where mode = 'live'\)[\s\S]*?inspect them/i)
+  assert.match(liveStarterMapping, /where mode = 'live' and purpose = 'setup'/i)
+  assert.doesNotMatch(liveStarterMapping, /\b(delete from|truncate|drop table|active\s*=\s*true)\b/i)
 })
