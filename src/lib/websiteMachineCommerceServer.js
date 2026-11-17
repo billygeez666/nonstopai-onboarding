@@ -1,6 +1,6 @@
 import { createHmac, timingSafeEqual } from 'node:crypto'
 import { createDomainChallenge, createNetlifyCustomerPublisher } from './websiteMachinePublishing.js'
-import { createStripeWebsiteMachineWebhook, createWebsiteMachineCheckoutApi, isStripeTestSecretKey, isPaidWebsiteMachineSession } from './websiteMachinePayments.js'
+import { createStripeWebsiteMachineWebhook, createWebsiteMachineCheckoutApi, isStripeTestSecretKey, isStripeLiveSecretKey, isPaidWebsiteMachineSession } from './websiteMachinePayments.js'
 import { createWebsiteMachineDeliveryEmail } from './websiteMachineEmail.js'
 import { getWebsiteMachineConfig } from './websiteMachineServer.js'
 
@@ -31,6 +31,28 @@ function stagingCommerceReady(config) {
     typeof config.rpcSecret === 'string' && config.rpcSecret.length >= 32 && config.netlifyToken &&
     config.netlifyAccountSlug === 'website-machine' && config.deliveryEmailApiKey &&
     /^[^\s@<>"']+@[^\s@<>"']+\.[^\s@<>"']{2,}$/.test(config.deliveryFromEmail || '')
+}
+
+function productionCommerceReady(config) {
+  let publicHost = ''
+  try {
+    const origin = new URL(config?.publicUrl || '')
+    if (origin.protocol === 'https:' && !origin.username && !origin.password) publicHost = origin.hostname.toLowerCase()
+  } catch {}
+  return config?.mode === 'production' &&
+    Boolean(publicHost) && !['localhost', '127.0.0.1'].includes(publicHost) &&
+    !['.example', '.test', '.invalid'].some((suffix) => publicHost.endsWith(suffix)) &&
+    config.publicUrl !== 'https://bendarus.netlify.app' &&
+    isStripeLiveSecretKey(config.stripeSecret) && config.stripeWebhookSecret?.startsWith('whsec_') &&
+    config.stripePrice === 'price_1TtvtIEWP0eV3FnnXUMIwPwG' &&
+    typeof config.rpcSecret === 'string' && config.rpcSecret.length >= 32 &&
+    Boolean(config.netlifyToken) && config.netlifyAccountSlug === 'website-machine' &&
+    config.deliveryEmailApiKey?.startsWith('re_') &&
+    /^[^\s@<>"']+@[^\s@<>"']+\.[^\s@<>"']{2,}$/.test(config.deliveryFromEmail || '')
+}
+
+function commerceReady(config) {
+  return config?.mode === 'production' ? productionCommerceReady(config) : stagingCommerceReady(config)
 }
 
 function signature(message, secret) {
@@ -159,14 +181,14 @@ function createRpc({ baseUrl, publishableKey, fetchImpl }) {
 
 export function createWebsiteMachineCheckoutHandler({ env = process.env, fetchImpl = fetch } = {}) {
   const config = runtime(env)
-  if (!stagingCommerceReady(config)) return async () => ({ statusCode: 503, body: 'Website Machine staging checkout and delivery are not fully configured.' })
+  if (!commerceReady(config)) return async () => ({ statusCode: 503, body: 'Website Machine checkout and delivery are not fully configured.' })
   const rpc = createRpc({ baseUrl: config.url, publishableKey: config.publishableKey, fetchImpl })
   return createWebsiteMachineCheckoutApi({
     env: {
       ...env,
       WM_STRIPE_SECRET_KEY: config.stripeSecret,
       WM_STRIPE_PRICE_ID: config.stripePrice,
-      WM_STRIPE_LIVEMODE: 'false',
+      WM_STRIPE_LIVEMODE: config.liveMode ? 'true' : 'false',
     },
     fetchImpl,
     publicUrl: () => config.publicUrl,
@@ -205,6 +227,11 @@ export function createWebsiteMachineCheckoutHandler({ env = process.env, fetchIm
         if (error.databaseCode === '42501' && error.databaseMessage === 'staging tester access required') {
           const safeError = new Error('Checkout is restricted to approved staging testers. No order or payment was created.')
           safeError.safeCode = 'WM_STAGING_TESTER_REQUIRED'
+          throw safeError
+        }
+        if (error.databaseCode === '22023' && error.databaseMessage === 'unapproved Website Machine one-off live price') {
+          const safeError = new Error('The live Website Machine offer is inactive. No order or payment was created.')
+          safeError.safeCode = 'WM_LIVE_OFFER_INACTIVE'
           throw safeError
         }
         throw error
@@ -427,7 +454,7 @@ export function createWebsiteMachineEmailRecoveryHandler({ env = process.env, fe
 
 export function createWebsiteMachineStripeWebhookHandler({ env = process.env, fetchImpl = fetch, sleep, maxPolls } = {}) {
   const config = runtime(env)
-  if (!stagingCommerceReady(config)) return async () => ({ statusCode: 503, body: 'Website Machine staging fulfillment is not fully configured.' })
+  if (!commerceReady(config)) return async () => ({ statusCode: 503, body: 'Website Machine payment fulfillment is not fully configured.' })
   const rpc = createRpc({ baseUrl: config.url, publishableKey: config.publishableKey, fetchImpl })
   const publisher = createNetlifyCustomerPublisher({
     env: { WM_NETLIFY_CUSTOMER_TOKEN: config.netlifyToken, WM_NETLIFY_ACCOUNT_SLUG: config.netlifyAccountSlug },
@@ -450,7 +477,7 @@ export function createWebsiteMachineStripeWebhookHandler({ env = process.env, fe
       WM_STRIPE_SECRET_KEY: config.stripeSecret,
       WM_STRIPE_WEBHOOK_SECRET: config.stripeWebhookSecret,
       WM_STRIPE_PRICE_ID: config.stripePrice,
-      WM_STRIPE_LIVEMODE: 'false',
+      WM_STRIPE_LIVEMODE: config.liveMode ? 'true' : 'false',
     },
     fetchImpl,
     publisher,

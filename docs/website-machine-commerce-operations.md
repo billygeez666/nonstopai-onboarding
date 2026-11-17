@@ -3,8 +3,8 @@
 ## Flow
 
 1. A signed-in owner saves a reviewed Website Machine project.
-2. The server reads the configured Stripe prices and checks the Website Machine product, £199 one-time setup, £50 monthly amount, GBP currency, and active state.
-3. The server creates a Stripe Checkout subscription and records the session on an owner-scoped order. Checkout return URLs only show a processing state.
+2. The server reads the configured Stripe price and checks the Website Machine product, £99 one-time amount, GBP currency, live/test mode, and active state.
+3. The server creates one Stripe Checkout payment session and records it on the owner-scoped, project-idempotent order. No subscription is created. Checkout return URLs only show a processing state.
 4. The Stripe webhook checks its timestamped signature, retrieves the Checkout Session from Stripe, verifies mode, owner/project/order metadata, paid status, total, and both exact line items. Only then can it confirm the durable order and publish.
 5. Netlify receives a new site with a deterministic `wm-<project UUID>` name. Before deployment, the publisher writes and reads back `website_machine_project_id` metadata and stores the site ID against the owner/project.
 6. The publisher deploys a fixed static HTML file, verifies the deploy belongs to the recorded site, waits for `ready`, and fetches the HTTPS deploy URL to confirm the expected business name.
@@ -26,8 +26,7 @@ Staging and production use different names so a missing production variable cann
 | `WM_STAGING_SUPABASE_PUBLISHABLE_KEY` | `WM_PRODUCTION_SUPABASE_PUBLISHABLE_KEY` | Supabase publishable key |
 | `WM_STAGING_STRIPE_SECRET_KEY` | `WM_PRODUCTION_STRIPE_SECRET_KEY` | Server-only Stripe API key for the matching mode |
 | `WM_STAGING_STRIPE_WEBHOOK_SECRET` | `WM_PRODUCTION_STRIPE_WEBHOOK_SECRET` | Dedicated webhook signing secret |
-| `WM_STAGING_STRIPE_SETUP_PRICE_ID` | `WM_PRODUCTION_STRIPE_SETUP_PRICE_ID` | Verified Website Machine setup price |
-| `WM_STAGING_STRIPE_MONTHLY_PRICE_ID` | `WM_PRODUCTION_STRIPE_MONTHLY_PRICE_ID` | Verified Website Machine monthly price |
+| `WM_STAGING_STRIPE_PRICE_ID` | `WM_PRODUCTION_STRIPE_PRICE_ID` | Verified one-time Website Machine price |
 | `WM_STAGING_PAYMENT_RPC_SECRET` | `WM_PRODUCTION_PAYMENT_RPC_SECRET` | At least 32 random bytes; also stored in Supabase Vault |
 | `WM_STAGING_NETLIFY_CUSTOMER_TOKEN` | `WM_PRODUCTION_NETLIFY_CUSTOMER_TOKEN` | Server-only Netlify publishing credential |
 | `WM_STAGING_NETLIFY_ACCOUNT_SLUG` | `WM_PRODUCTION_NETLIFY_ACCOUNT_SLUG` | Dedicated Netlify team/account that owns customer sites |
@@ -38,20 +37,14 @@ The migration expects Vault secrets named `wm_payment_rpc_secret_staging` and `w
 
 ## Stripe configuration
 
-Existing live Website Machine prices verified in the Stripe dashboard:
+Selected existing live Website Machine Starter price:
 
-- Setup: `price_1TtvtMEWP0eV3Fnn3Gd8ltId` — £199 one-time.
-- Monthly: `price_1TtvtQEWP0eV3FnnCAi7Z9Ko` — £50/month.
+- `price_1TtvtIEWP0eV3FnnXUMIwPwG` — £99 GBP, one-time. The matching Supabase offer stays inactive until explicit launch approval.
+- No recurring price is part of this launch.
 
-Test-mode mirror prices verified in the Stripe test dashboard:
-
-- Setup: `price_1UcLidEWP0eV3Fnn0GpGUYiT` — £199 one-time.
-- Monthly: `price_1UcLjSEWP0eV3FnnWKkhUtDA` — £50/month.
-
-Create one dedicated **test-mode** webhook endpoint at
-`https://nonstopai-staging-preview.netlify.app/.netlify/functions/website-machine-stripe-webhook`
-for `checkout.session.completed` and `checkout.session.async_payment_succeeded`. Production must use a separate live-mode endpoint and signing secret at
-`https://nonstopai.netlify.app/.netlify/functions/website-machine-stripe-webhook`.
+Use the dedicated **test-mode** staging webhook endpoint at
+`https://bendarus.netlify.app/.netlify/functions/website-machine-stripe-webhook`
+for `checkout.session.completed` and `checkout.session.async_payment_succeeded`. Production must use a separate live-mode endpoint and signing secret at the actual production Website Machine host; do not use a guessed URL.
 
 ## Netlify publisher isolation
 
@@ -71,4 +64,4 @@ The existing NONSTOP AI production and staging Netlify sites are not used as pub
 
 ## Current release state
 
-The existing Website Machine staging site has its Supabase URL and publishable key. Stripe API/webhook secrets, payment RPC secret, and dedicated staging publisher token/team slug are not configured. Checkout and publishing therefore stay disabled. The existing NONSTOP AI production and staging Netlify sites remain outside Website Machine publishing. Production must remain disabled until the complete Stripe test-mode purchase-to-delivery flow passes on staging.
+The live price is mapped in Supabase but the live offer is inactive. The mode-separated production RPC migration is applied; its production Vault secret is not configured, so live payment confirmation remains fail-closed. Netlify production credentials and a production Website Machine app host are not verified in this workspace. The existing NONSTOP AI production and staging Netlify sites remain outside Website Machine customer publishing. Keep production checkout disabled until the dedicated production project, webhook, credentials, publisher isolation, staging end-to-end flow, and explicit activation approval are verified. See [the live launch checklist](website-machine-live-launch.md).

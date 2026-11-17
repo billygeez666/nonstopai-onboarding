@@ -35,6 +35,28 @@ test('auth endpoint exchanges credentials server-side and returns only a bounded
   assert.equal(sent.options.body.includes('test-only-password'), true)
 })
 
+test('signup uses Supabase Auth confirmation redirect and never bypasses email confirmation', async () => {
+  let sent
+  const handler = createAuthApi({ env: { ...env, WM_STAGING_PUBLIC_URL: 'https://bendarus.netlify.app' }, fetchImpl: async (url, options) => {
+    sent = { url, options }
+    return { ok: true, json: async () => ({ user: { id: project.owner_id, email: 'new-user@example.test' }, access_token: null }) }
+  } })
+  const response = await handler(event('POST', { action: 'signup', email: 'new-user@example.test', password: 'long-test-password' }))
+  assert.equal(response.statusCode, 200)
+  assert.equal(JSON.parse(response.body).confirmationRequired, true)
+  assert.match(sent.url, /auth\/v1\/signup$/)
+  assert.deepEqual(JSON.parse(sent.options.body).options, { emailRedirectTo: 'https://bendarus.netlify.app/website-machine/' })
+  assert.equal(JSON.parse(response.body).accessToken, undefined)
+})
+
+test('signup rejects weak passwords before calling Supabase Auth', async () => {
+  let calls = 0
+  const handler = createAuthApi({ env, fetchImpl: async () => { calls += 1; throw new Error('must validate locally') } })
+  const response = await handler(event('POST', { action: 'signup', email: 'person@example.test', password: 'short' }))
+  assert.equal(response.statusCode, 400)
+  assert.equal(calls, 0)
+})
+
 test('project creation rejects anonymous callers before any database write', async () => {
   let databaseCalls = 0
   const handler = createProjectApi({ env, fetchImpl: async (url) => {

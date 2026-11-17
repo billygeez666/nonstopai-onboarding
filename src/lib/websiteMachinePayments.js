@@ -5,6 +5,7 @@ const API = 'https://api.stripe.com/v1'
 const WEBSITE_MACHINE_ONE_OFF_AMOUNT = 9900
 const isId = (value) => typeof value === 'string' && /^[A-Za-z0-9_-]{8,120}$/.test(value)
 export const isStripeTestSecretKey = (value) => typeof value === 'string' && (value.startsWith('sk_test_') || value.startsWith('rk_test_'))
+export const isStripeLiveSecretKey = (value) => typeof value === 'string' && (value.startsWith('sk_live_') || value.startsWith('rk_live_'))
 
 export function verifyStripeWebhookSignature(rawBody, signatureHeader, secret, now = Date.now(), toleranceSeconds = 300) {
   if (!Buffer.isBuffer(rawBody) || typeof secret !== 'string' || secret.length < 16 || typeof signatureHeader !== 'string') return null
@@ -28,10 +29,10 @@ export function paymentRpcSignature({ eventId, sessionId, projectId, amount, cur
   return createHmac('sha256', secret).update(message).digest('hex')
 }
 
-function validatePrice(price, { id, amount }) {
+function validatePrice(price, { id, amount, liveMode = false }) {
   const isWebsiteMachine = /website/i.test(price?.product?.name || '') || price?.product?.metadata?.product === 'website_machine'
   return price?.id === id && price.active === true && price.currency === 'gbp' && price.unit_amount === amount &&
-    !price.recurring &&
+    price.livemode === liveMode && !price.recurring &&
     typeof price.product === 'object' && price.product.active === true && isWebsiteMachine && !/receptionist/i.test(price.product.name || '')
 }
 
@@ -50,20 +51,23 @@ export function createWebsiteMachineCheckoutApi({
     if (event.httpMethod !== 'POST') return { statusCode: 405, body: 'Method not allowed.' }
     if (Buffer.byteLength(event.body || '') > 20_000) return { statusCode: 413, body: JSON.stringify({ error: 'Request is too large.' }) }
     const liveMode = env.WM_STRIPE_LIVEMODE === 'true'
-    if (liveMode || !isStripeTestSecretKey(env.WM_STRIPE_SECRET_KEY) || !env.WM_STRIPE_PRICE_ID) {
-      return { statusCode: 503, body: JSON.stringify({ error: 'Website Machine one-off test checkout is not configured.' }) }
+    const keyMatchesMode = liveMode ? isStripeLiveSecretKey(env.WM_STRIPE_SECRET_KEY) : isStripeTestSecretKey(env.WM_STRIPE_SECRET_KEY)
+    if (!keyMatchesMode || !env.WM_STRIPE_PRICE_ID) {
+      return { statusCode: 503, body: JSON.stringify({ error: `Website Machine ${liveMode ? 'live' : 'test'} checkout is not configured.` }) }
     }
     try {
       const token = (event.headers?.authorization || event.headers?.Authorization || '').match(/^Bearer\s+(.+)$/i)?.[1]
       const user = await verifyUser?.(token)
       if (!user?.id) return { statusCode: 401, body: JSON.stringify({ error: 'A valid Website Machine session is required.' }) }
-      let authorizedTester = false
-      try {
-        authorizedTester = await isAuthorizedTester({ token, user }) === true
-      } catch {
-        return { statusCode: 503, body: JSON.stringify({ error: 'Staging checkout authorization could not be verified.' }) }
+      if (!liveMode) {
+        let authorizedTester = false
+        try {
+          authorizedTester = await isAuthorizedTester({ token, user }) === true
+        } catch {
+          return { statusCode: 503, body: JSON.stringify({ error: 'Staging checkout authorization could not be verified.' }) }
+        }
+        if (!authorizedTester) return { statusCode: 403, body: JSON.stringify({ error: 'Staging checkout is restricted to approved testers.' }) }
       }
-      if (!authorizedTester) return { statusCode: 403, body: JSON.stringify({ error: 'Staging checkout is restricted to approved testers.' }) }
       const body = JSON.parse(event.body || '{}')
       if (!/^[0-9a-f-]{36}$/i.test(body.projectId || '')) return { statusCode: 400, body: JSON.stringify({ error: 'A valid project is required.' }) }
       if (body.domain || body.domainChallenge) {
@@ -84,11 +88,12 @@ export function createWebsiteMachineCheckoutApi({
       const priceResponse = await fetchImpl(`${API}/prices/${encodeURIComponent(env.WM_STRIPE_PRICE_ID)}?expand%5B%5D=product`, { headers: stripeHeaders })
       if (!priceResponse.ok) return { statusCode: 503, body: JSON.stringify({ error: 'Website Machine Stripe price could not be verified.' }) }
       const price = await priceResponse.json()
-      if (!validatePrice(price, { id: env.WM_STRIPE_PRICE_ID, amount: WEBSITE_MACHINE_ONE_OFF_AMOUNT })) {
+      if (!validatePrice(price, { id: env.WM_STRIPE_PRICE_ID, amount: WEBSITE_MACHINE_ONE_OFF_AMOUNT, liveMode })) {
         return { statusCode: 409, body: JSON.stringify({ error: 'Configured Stripe price does not match the £99 Website Machine one-off offer.' }) }
       }
 
-      const order = await createOrder({ token, project, setupPriceId: price.id, monthlyPriceId: null, domain: body.domain || null, domainChallenge: body.domainChallenge || null, mode: 'test', idempotencyKey: requestKey })
+      const mode = liveMode ? 'live' : 'test'
+      const order = await createOrder({ token, project, setupPriceId: price.id, monthlyPriceId: null, domain: body.domain || null, domainChallenge: body.domainChallenge || null, mode, idempotencyKey: requestKey })
       if (!isId(order?.id)) return { statusCode: 500, body: JSON.stringify({ error: 'Order could not be prepared.' }) }
       if (order.status && order.status !== 'pending') {
         return { statusCode: 409, body: JSON.stringify({ error: 'This project already has a paid or completed Website Machine order.' }) }
@@ -133,6 +138,9 @@ export function createWebsiteMachineCheckoutApi({
       if (error?.safeCode === 'WM_STAGING_TESTER_REQUIRED') {
         return { statusCode: 403, body: JSON.stringify({ code: error.safeCode, error: error.message }) }
       }
+      if (error?.safeCode === 'WM_LIVE_OFFER_INACTIVE') {
+        return { statusCode: 409, body: JSON.stringify({ code: error.safeCode, error: error.message }) }
+      }
       return { statusCode: 400, body: JSON.stringify({ error: 'Checkout request could not be processed.' }) }
     }
   }
@@ -140,7 +148,7 @@ export function createWebsiteMachineCheckoutApi({
 
 export function isPaidWebsiteMachineSession(session, { orderId, projectId, ownerId, setupPriceId, liveMode = false } = {}) {
   if (!session || session.object !== 'checkout.session' || session.status !== 'complete' || session.payment_status !== 'paid' ||
-      session.mode !== 'payment' || liveMode || session.livemode !== false || session.currency !== 'gbp' || session.amount_total !== WEBSITE_MACHINE_ONE_OFF_AMOUNT ||
+      session.mode !== 'payment' || session.livemode !== liveMode || session.currency !== 'gbp' || session.amount_total !== WEBSITE_MACHINE_ONE_OFF_AMOUNT ||
       session.metadata?.wm_order_id !== orderId || session.metadata?.wm_project_id !== projectId || session.metadata?.wm_owner_id !== ownerId) return false
   const rows = session.line_items?.data
   if (!Array.isArray(rows) || rows.length !== 1) return false
@@ -163,7 +171,9 @@ export function createStripeWebsiteMachineWebhook({
 } = {}) {
   return async (event) => {
     if (event.httpMethod !== 'POST') return { statusCode: 405, body: 'Method not allowed.' }
-    if (!isStripeTestSecretKey(env.WM_STRIPE_SECRET_KEY) || env.WM_STRIPE_LIVEMODE === 'true' || !env.WM_STRIPE_WEBHOOK_SECRET || typeof loadOrder !== 'function' || typeof confirmPaidOrder !== 'function' || !publisher || typeof recordDeployment !== 'function' || typeof claimDeliveryEmail !== 'function' || typeof finishDeliveryEmail !== 'function' || typeof sendDeliveryEmail !== 'function') {
+    const liveMode = env.WM_STRIPE_LIVEMODE === 'true'
+    const keyMatchesMode = liveMode ? isStripeLiveSecretKey(env.WM_STRIPE_SECRET_KEY) : isStripeTestSecretKey(env.WM_STRIPE_SECRET_KEY)
+    if (!keyMatchesMode || !env.WM_STRIPE_WEBHOOK_SECRET || typeof loadOrder !== 'function' || typeof confirmPaidOrder !== 'function' || !publisher || typeof recordDeployment !== 'function' || typeof claimDeliveryEmail !== 'function' || typeof finishDeliveryEmail !== 'function' || typeof sendDeliveryEmail !== 'function') {
       return { statusCode: 503, body: 'Website Machine payment fulfillment is not configured.' }
     }
     try {
@@ -178,7 +188,8 @@ export function createStripeWebsiteMachineWebhook({
       const orderId = notice?.metadata?.wm_order_id
       if (!/^[0-9a-f-]{36}$/i.test(orderId || '')) return { statusCode: 200, body: 'Not a Website Machine order.' }
       const order = await loadOrder({ orderId, mode: stripeEvent.livemode ? 'live' : 'test' })
-      if (!order || order.id !== orderId || !order.projectId || !order.ownerId || !order.setupPriceId || order.mode !== 'test') return { statusCode: 404, body: 'Order not found.' }
+      const mode = liveMode ? 'live' : 'test'
+      if (!order || order.id !== orderId || !order.projectId || !order.ownerId || !order.setupPriceId || order.mode !== mode) return { statusCode: 404, body: 'Order not found.' }
 
       const stripeResponse = await fetchImpl(`${API}/checkout/sessions/${encodeURIComponent(notice.id)}?expand%5B%5D=line_items.data.price`, {
         headers: { authorization: `Bearer ${env.WM_STRIPE_SECRET_KEY}` },
@@ -187,7 +198,7 @@ export function createStripeWebsiteMachineWebhook({
       const session = await stripeResponse.json()
       if (session.id !== notice.id || session.client_reference_id !== orderId || !isPaidWebsiteMachineSession(session, {
         orderId, projectId: order.projectId, ownerId: order.ownerId,
-        setupPriceId: order.setupPriceId, liveMode: false,
+        setupPriceId: order.setupPriceId, liveMode,
       })) {
         // Checkout can complete before a delayed payment settles. Never fulfill on
         // the redirect or on an unpaid `checkout.session.completed` notification.

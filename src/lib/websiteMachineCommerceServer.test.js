@@ -16,7 +16,7 @@ test('runtime configuration is explicitly split between staging and production',
   assert.equal(getWebsiteMachineConfig({ WM_STAGING_SUPABASE_URL: 'https://attacker.supabase.co', WM_STAGING_SUPABASE_PUBLISHABLE_KEY: 'key' }), null)
 })
 
-test('production checkout remains disabled even when production commerce values are present', async () => {
+test('production checkout fails closed when team scope, verified price, or production configuration is wrong', async () => {
   let externalCalls = 0
   const handler = createWebsiteMachineCheckoutHandler({ env: {
     WM_RUNTIME_ENV: 'production', WM_PRODUCTION_SUPABASE_URL: supabase,
@@ -33,6 +33,53 @@ test('production checkout remains disabled even when production commerce values 
   assert.equal(response.statusCode, 503)
   assert.match(response.body, /not fully configured/)
   assert.equal(externalCalls, 0)
+})
+
+test('production checkout verifies live-mode price but Supabase inactive-offer gate prevents creating a session', async () => {
+  const ownerId = '6f5f3099-2ec4-4596-a1d1-82891e94ead0'
+  const projectId = 'c70f3d5f-f910-441a-9b39-8374d1d28532'
+  const calls = []
+  const handler = createWebsiteMachineCheckoutHandler({ env: {
+    WM_RUNTIME_ENV: 'production', WM_PRODUCTION_SUPABASE_URL: supabase, WM_PRODUCTION_SUPABASE_PUBLISHABLE_KEY: 'prod-publishable',
+    WM_PRODUCTION_PUBLIC_URL: 'https://www.nonstopai.ai', WM_PRODUCTION_STRIPE_SECRET_KEY: 'sk_live_synthetic',
+    WM_PRODUCTION_STRIPE_WEBHOOK_SECRET: 'whsec_synthetic', WM_PRODUCTION_STRIPE_PRICE_ID: 'price_1TtvtIEWP0eV3FnnXUMIwPwG',
+    WM_PRODUCTION_PAYMENT_RPC_SECRET: 'p'.repeat(40), WM_PRODUCTION_NETLIFY_CUSTOMER_TOKEN: 'dedicated-token',
+    WM_PRODUCTION_NETLIFY_ACCOUNT_SLUG: 'website-machine', WM_PRODUCTION_EMAIL_API_KEY: 're_synthetic',
+    WM_PRODUCTION_DELIVERY_FROM_EMAIL: 'websites@example.test',
+    WM_STAGING_STRIPE_SECRET_KEY: 'sk_test_must_not_be_used', WM_STAGING_PUBLIC_URL: 'https://bendarus.netlify.app',
+  }, fetchImpl: async (url, options = {}) => {
+    calls.push({ url, options })
+    if (url.endsWith('/auth/v1/user')) return { ok: true, json: async () => ({ id: ownerId }) }
+    if (url.includes('/rest/v1/wm_projects')) return { ok: true, json: async () => [{ id: projectId, owner_id: ownerId, content: {}, status: 'review' }] }
+    if (url.startsWith('https://api.stripe.com/v1/prices/')) return { ok: true, json: async () => ({ id: 'price_1TtvtIEWP0eV3FnnXUMIwPwG', livemode: true, active: true, currency: 'gbp', unit_amount: 9900, recurring: null, product: { active: true, name: 'Website Machine Starter' } }) }
+    if (url.endsWith('/rpc/wm_create_checkout_order')) return { ok: false, status: 400, json: async () => ({ code: '22023', message: 'unapproved Website Machine one-off live price' }) }
+    throw new Error('The inactive offer must block checkout-session creation')
+  } })
+  const response = await handler({ httpMethod: 'POST', headers: { authorization: 'Bearer authenticated-user-token' }, body: JSON.stringify({ projectId }) })
+  assert.equal(response.statusCode, 409)
+  assert.equal(JSON.parse(response.body).code, 'WM_LIVE_OFFER_INACTIVE')
+  assert.deepEqual(calls.filter(({ url }) => url.includes('/checkout/sessions')), [])
+  assert.equal(calls.find(({ url }) => url.includes('/prices/')).options.headers.authorization, 'Bearer sk_live_synthetic')
+})
+
+test('production webhook rejects a signed test-mode event before database or Stripe access', async () => {
+  const webhookSecret = 'whsec_synthetic_production_secret'
+  const event = { id: 'evt_synthetic_test_mode', type: 'checkout.session.completed', livemode: false, data: { object: { id: 'cs_test_synthetic', metadata: {} } } }
+  const raw = Buffer.from(JSON.stringify(event))
+  const timestamp = Math.floor(Date.now() / 1000)
+  const sig = createHmac('sha256', webhookSecret).update(`${timestamp}.`).update(raw).digest('hex')
+  let requests = 0
+  const handler = createWebsiteMachineStripeWebhookHandler({ env: {
+    WM_RUNTIME_ENV: 'production', WM_PRODUCTION_SUPABASE_URL: supabase, WM_PRODUCTION_SUPABASE_PUBLISHABLE_KEY: 'prod-publishable',
+    WM_PRODUCTION_PUBLIC_URL: 'https://www.nonstopai.ai', WM_PRODUCTION_STRIPE_SECRET_KEY: 'sk_live_synthetic',
+    WM_PRODUCTION_STRIPE_WEBHOOK_SECRET: webhookSecret, WM_PRODUCTION_STRIPE_PRICE_ID: 'price_1TtvtIEWP0eV3FnnXUMIwPwG',
+    WM_PRODUCTION_PAYMENT_RPC_SECRET: 'p'.repeat(40), WM_PRODUCTION_NETLIFY_CUSTOMER_TOKEN: 'dedicated-token',
+    WM_PRODUCTION_NETLIFY_ACCOUNT_SLUG: 'website-machine', WM_PRODUCTION_EMAIL_API_KEY: 're_synthetic',
+    WM_PRODUCTION_DELIVERY_FROM_EMAIL: 'websites@example.test',
+  }, fetchImpl: async () => { requests += 1; throw new Error('mode mismatch must stop before external calls') } })
+  const response = await handler({ httpMethod: 'POST', body: raw.toString(), headers: { 'stripe-signature': `t=${timestamp},v1=${sig}` } })
+  assert.equal(response.statusCode, 400)
+  assert.equal(requests, 0)
 })
 
 test('staging webhook stays disabled until a dedicated Netlify account is configured', async () => {

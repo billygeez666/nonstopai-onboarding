@@ -47,6 +47,8 @@ export default function WebsiteMachine() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [authError, setAuthError] = useState('')
+  const [authMessage, setAuthMessage] = useState('')
+  const [authMode, setAuthMode] = useState('signin')
   const paymentNotice = new URLSearchParams(window.location.search).get('payment')
   const returnProjectId = new URLSearchParams(window.location.search).get('project_id')
   const emailRecoveryMode = new URLSearchParams(window.location.search).get('wm_recovery') === emailRecoveryOrderId
@@ -140,19 +142,28 @@ export default function WebsiteMachine() {
 
   async function signIn(event) {
     event.preventDefault()
-    setBusyAction('Signing in')
+    const signup = authMode === 'signup'
+    setBusyAction(signup ? 'Creating account' : 'Signing in')
     setAuthError('')
+    setAuthMessage('')
     try {
       const response = await request('/.netlify/functions/website-machine-auth', {
-        method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email, password }),
+        method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action: signup ? 'signup' : 'signin', email, password }),
       })
       const result = await response.json()
-      if (!response.ok) throw new Error(result.error || 'Sign-in failed.')
+      if (!response.ok) throw new Error(result.error || (signup ? 'Account creation failed.' : 'Sign-in failed.'))
+      if (result.confirmationRequired) {
+        setAuthMessage(result.message || 'Check your email to confirm your account, then sign in.')
+        setPassword('')
+        setAuthMode('signin')
+        return
+      }
       sessionStorage.setItem('wm_access_token', result.accessToken)
       sessionStorage.setItem('wm_account_email', result.user.email || email)
       setSession(result.accessToken)
       setAccount(result.user.email || email)
       setPassword('')
+      if (signup) setAuthMessage('Account created and signed in.')
     } catch (error) {
       setAuthError(error.message)
     } finally {
@@ -346,7 +357,7 @@ export default function WebsiteMachine() {
       <section className="wm-auth-panel" aria-label="Website Machine account">
         {session
           ? <><span>Signed in as <b>{account}</b></span><button type="button" onClick={signOut}>Sign out</button></>
-          : <form onSubmit={signIn}><strong>Sign in to save projects</strong><input aria-label="Account email" type="email" autoComplete="username" required maxLength={254} placeholder="Your NONSTOP AI account email" value={email} onChange={(event) => setEmail(event.target.value)} /><input aria-label="Account password" type="password" autoComplete="current-password" required maxLength={1024} placeholder="Password" value={password} onChange={(event) => setPassword(event.target.value)} /><button type="submit" disabled={busy}>{busyAction === 'Signing in' ? 'Signing in…' : 'Sign in'}</button>{authError && <small role="alert">{authError}</small>}</form>}
+          : <form onSubmit={signIn}><strong>{authMode === 'signup' ? 'Create an account' : 'Sign in to save projects'}</strong><input aria-label="Account email" type="email" autoComplete="username" required maxLength={254} placeholder="Your NONSTOP AI account email" value={email} onChange={(event) => setEmail(event.target.value)} /><input aria-label="Account password" type="password" autoComplete={authMode === 'signup' ? 'new-password' : 'current-password'} required minLength={authMode === 'signup' ? 12 : undefined} maxLength={1024} placeholder={authMode === 'signup' ? 'At least 12 characters' : 'Password'} value={password} onChange={(event) => setPassword(event.target.value)} /><button type="submit" disabled={busy}>{busyAction ? `${busyAction}…` : authMode === 'signup' ? 'Create account' : 'Sign in'}</button><button type="button" disabled={busy} onClick={() => { setAuthMode(authMode === 'signup' ? 'signin' : 'signup'); setAuthError(''); setAuthMessage('') }}>{authMode === 'signup' ? 'Already have an account? Sign in' : 'New here? Create an account'}</button>{authError && <small role="alert">{authError}</small>}{authMessage && <small role="status">{authMessage}</small>}</form>}
       </section>
 
       <div className="wm-workspace">

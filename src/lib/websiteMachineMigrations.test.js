@@ -9,6 +9,7 @@ const emailDelivery = readFileSync(new URL('../../supabase/migrations/2026111715
 const emailRecovery = readFileSync(new URL('../../supabase/migrations/20261117163153_website_machine_one_time_email_recovery_20261117.sql', import.meta.url), 'utf8')
 const checkoutIdempotency = readFileSync(new URL('../../supabase/migrations/20261117220611_website_machine_project_checkout_idempotency.sql', import.meta.url), 'utf8')
 const liveStarterMapping = readFileSync(new URL('../../supabase/migrations/20261117220837_website_machine_live_starter_price_mapping.sql', import.meta.url), 'utf8')
+const liveAuthorization = readFileSync(new URL('../../supabase/migrations/20261117222640_website_machine_live_checkout_authorization.sql', import.meta.url), 'utf8')
 
 test('commerce migration seeds and leaves every Website Machine Stripe offer inactive', () => {
   const offerInsert = commerce.match(/insert into public\.wm_offer_prices[\s\S]*?on conflict \(mode, purpose\) do nothing;/i)?.[0]
@@ -121,4 +122,19 @@ test('live Starter Website price mapping reuses the verified £99 price and rema
   assert.match(liveStarterMapping, /if exists \(select 1 from public\.wm_orders where mode = 'live'\)[\s\S]*?inspect them/i)
   assert.match(liveStarterMapping, /where mode = 'live' and purpose = 'setup'/i)
   assert.doesNotMatch(liveStarterMapping, /\b(delete from|truncate|drop table|active\s*=\s*true)\b/i)
+})
+
+test('live authorization remains mode-separated, owner-scoped, idempotent, and fail-closed while offers stay inactive', () => {
+  assert.match(liveAuthorization, /wm_payment_rpc_secret_production/i)
+  assert.match(liveAuthorization, /when 'test' then 'wm_payment_rpc_secret_staging'[\s\S]*when 'live' then 'wm_payment_rpc_secret_production'/i)
+  assert.match(liveAuthorization, /p_mode='test' and not exists[\s\S]*wm_staging_checkout_testers/i)
+  assert.match(liveAuthorization, /p_mode not in \('test','live'\)/i)
+  assert.match(liveAuthorization, /p\.mode=p_mode[\s\S]*p\.active[\s\S]*p\.unit_amount=9900[\s\S]*p\.recurring_interval is null/i)
+  assert.match(liveAuthorization, /price_1TtvtIEWP0eV3FnnXUMIwPwG[\s\S]*active=false/i)
+  assert.match(liveAuthorization, /on conflict\(project_id\) do nothing/i)
+  assert.match(liveAuthorization, /o\.mode=p_mode and o\.paid_at is not null/i)
+  assert.match(liveAuthorization, /status='delivering'[\s\S]*wm_orders/i)
+  assert.match(liveAuthorization, /if p_outcome='accepted' then[\s\S]*status='delivered'/i)
+  assert.match(liveAuthorization, /revoke all on function public\.wm_create_checkout_order[\s\S]*grant execute on function public\.wm_create_checkout_order[\s\S]*to authenticated/i)
+  assert.doesNotMatch(liveAuthorization, /\b(delete from|truncate|drop table|set\s+active\s*=\s*true)\b/i)
 })

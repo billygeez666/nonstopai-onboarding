@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { createHmac } from 'node:crypto'
-import { createStripeWebsiteMachineWebhook, createWebsiteMachineCheckoutApi, isPaidWebsiteMachineSession, isStripeTestSecretKey, paymentRpcSignature, verifyStripeWebhookSignature } from './websiteMachinePayments.js'
+import { createStripeWebsiteMachineWebhook, createWebsiteMachineCheckoutApi, isPaidWebsiteMachineSession, isStripeLiveSecretKey, isStripeTestSecretKey, paymentRpcSignature, verifyStripeWebhookSignature } from './websiteMachinePayments.js'
 import { createWebsiteMachineDeliveryEmail } from './websiteMachineEmail.js'
 
 const ownerId = 'd3cbfcf4-7cb8-4f63-a20d-73d963a88791'
@@ -10,6 +10,7 @@ const orderId = '6f5f3099-2ec4-4596-a1d1-82891e94ead0'
 const setupPriceId = 'price_setup_wm'
 const secret = 'whsec_test_' + 'a'.repeat(40)
 const apiKey = 'sk_test_' + 'b'.repeat(40)
+const liveApiKey = 'sk_live_' + 'c'.repeat(40)
 const baseSession = {
   id: 'cs_test_example', object: 'checkout.session', livemode: false, status: 'complete', payment_status: 'paid',
   mode: 'payment', currency: 'gbp', amount_total: 9900, client_reference_id: orderId,
@@ -83,14 +84,14 @@ test('checkout rejects existing Stripe products that do not match Website Machin
     verifyUser: async () => ({ id: ownerId }),
     isAuthorizedTester: async () => true,
     loadOwnedProject: async () => ({ id: projectId, owner_id: ownerId }),
-    fetchImpl: async () => ({ ok: true, json: async () => ({ id: setupPriceId, active: true, currency: 'gbp', unit_amount: 19900, recurring: null, product: { active: true, name: 'Website Machine One-off' } }) }),
+    fetchImpl: async () => ({ ok: true, json: async () => ({ id: setupPriceId, livemode: false, active: true, currency: 'gbp', unit_amount: 19900, recurring: null, product: { active: true, name: 'Website Machine One-off' } }) }),
   })
   const response = await handler({ httpMethod: 'POST', headers: { authorization: 'Bearer customer-session' }, body: JSON.stringify({ projectId, idempotencyKey: 'wm-checkout-test-01' }) })
   assert.equal(response.statusCode, 409)
   assert.match(JSON.parse(response.body).error, /£99/)
 })
 
-test('checkout rejects live-mode credentials and flags before contacting Stripe or storage', async () => {
+test('checkout rejects credentials that do not match the configured Stripe mode', async () => {
   let calls = 0
   const makeHandler = (env) => createWebsiteMachineCheckoutApi({
     env,
@@ -99,10 +100,10 @@ test('checkout rejects live-mode credentials and flags before contacting Stripe 
     fetchImpl: async () => { calls += 1; throw new Error('must reject before external request') },
   })
   const event = { httpMethod: 'POST', body: JSON.stringify({ projectId, idempotencyKey: 'live-checkout-test-001' }) }
-  const liveKey = await makeHandler({ WM_STRIPE_SECRET_KEY: 'sk_live_never_use', WM_STRIPE_PRICE_ID: setupPriceId })(event)
-  const liveFlag = await makeHandler({ WM_STRIPE_SECRET_KEY: apiKey, WM_STRIPE_PRICE_ID: setupPriceId, WM_STRIPE_LIVEMODE: 'true' })(event)
-  assert.equal(liveKey.statusCode, 503)
-  assert.equal(liveFlag.statusCode, 503)
+  const missingLiveKey = await makeHandler({ WM_STRIPE_PRICE_ID: setupPriceId, WM_STRIPE_LIVEMODE: 'true' })(event)
+  const testKeyWithLiveFlag = await makeHandler({ WM_STRIPE_SECRET_KEY: apiKey, WM_STRIPE_PRICE_ID: setupPriceId, WM_STRIPE_LIVEMODE: 'true' })(event)
+  assert.equal(missingLiveKey.statusCode, 503)
+  assert.equal(testKeyWithLiveFlag.statusCode, 503)
   assert.equal(calls, 0)
 })
 
@@ -111,6 +112,9 @@ test('restricted Stripe test keys are accepted while live restricted keys are re
   assert.equal(isStripeTestSecretKey('sk_test_fixture'), true)
   assert.equal(isStripeTestSecretKey('rk_live_fixture'), false)
   assert.equal(isStripeTestSecretKey('sk_live_fixture'), false)
+  assert.equal(isStripeLiveSecretKey('rk_live_fixture'), true)
+  assert.equal(isStripeLiveSecretKey('sk_live_fixture'), true)
+  assert.equal(isStripeLiveSecretKey('sk_test_fixture'), false)
   let externalCalls = 0
   const checkout = createWebsiteMachineCheckoutApi({
     env: { WM_STRIPE_SECRET_KEY: 'rk_test_restricted_fixture', WM_STRIPE_PRICE_ID: setupPriceId },
@@ -119,6 +123,31 @@ test('restricted Stripe test keys are accepted while live restricted keys are re
   const response = await checkout({ httpMethod: 'POST', headers: {}, body: '{}' })
   assert.equal(response.statusCode, 401)
   assert.equal(externalCalls, 0)
+})
+
+test('live checkout uses only verified live £99 price and binds a live order without staging allowlist', async () => {
+  const calls = []
+  let created
+  const handler = createWebsiteMachineCheckoutApi({
+    env: { WM_STRIPE_SECRET_KEY: liveApiKey, WM_STRIPE_PRICE_ID: 'price_live_fixture', WM_STRIPE_LIVEMODE: 'true', URL: 'https://example.test' },
+    verifyUser: async () => ({ id: ownerId }),
+    isAuthorizedTester: async () => { throw new Error('staging allowlist must not run in live mode') },
+    loadOwnedProject: async () => ({ id: projectId, owner_id: ownerId }),
+    createOrder: async (input) => { created = input; return { id: orderId, status: 'pending' } },
+    saveCheckoutSession: async () => {},
+    fetchImpl: async (url, options = {}) => {
+      calls.push({ url, options })
+      if (url.includes('/prices/')) return { ok: true, json: async () => ({ id: 'price_live_fixture', livemode: true, active: true, currency: 'gbp', unit_amount: 9900, recurring: null, product: { active: true, name: 'Website Machine Starter' } }) }
+      const form = new URLSearchParams(options.body)
+      return { ok: true, json: async () => ({ id: 'cs_live_12345678', url: 'https://checkout.stripe.com/live', livemode: true, metadata: { wm_order_id: form.get('metadata[wm_order_id]') } }) }
+    },
+  })
+  const response = await handler({ httpMethod: 'POST', headers: { authorization: 'Bearer session' }, body: JSON.stringify({ projectId }) })
+  assert.equal(response.statusCode, 200)
+  assert.equal(created.mode, 'live')
+  assert.equal(created.setupPriceId, 'price_live_fixture')
+  assert.equal(JSON.parse(response.body).checkoutUrl, 'https://checkout.stripe.com/live')
+  assert.equal(calls.every(({ options }) => options.headers.authorization === `Bearer ${liveApiKey}`), true)
 })
 
 test('staging checkout denies users outside the tester allowlist before project, Stripe, or order access', async () => {
@@ -165,7 +194,7 @@ test('checkout uses authenticated project ownership and creates Stripe-hosted se
     fetchImpl: async (url, options = {}) => {
       calls.push({ url, options })
       if (url.includes('/prices/')) {
-        return { ok: true, json: async () => ({ id: setupPriceId, active: true, currency: 'gbp', unit_amount: 9900, recurring: null, product: { active: true, name: 'Website Machine One-off' } }) }
+        return { ok: true, json: async () => ({ id: setupPriceId, livemode: false, active: true, currency: 'gbp', unit_amount: 9900, recurring: null, product: { active: true, name: 'Website Machine One-off' } }) }
       }
       const params = new URLSearchParams(options.body)
       return { ok: true, json: async () => ({ id: 'cs_test_12345678', url: 'https://checkout.stripe.test/session', livemode: false, metadata: { wm_order_id: params.get('metadata[wm_order_id]') } }) }
@@ -302,7 +331,7 @@ test('synthetic £99 purchase flows from Checkout through signed fulfillment, is
     createOrder: async () => ({ id: orderId }),
     saveCheckoutSession: async () => {},
     fetchImpl: async (url, options = {}) => {
-      if (url.includes('/prices/')) return { ok: true, json: async () => ({ id: setupPriceId, active: true, currency: 'gbp', unit_amount: 9900, recurring: null, product: { active: true, name: 'Website Machine One-off' } }) }
+      if (url.includes('/prices/')) return { ok: true, json: async () => ({ id: setupPriceId, livemode: false, active: true, currency: 'gbp', unit_amount: 9900, recurring: null, product: { active: true, name: 'Website Machine One-off' } }) }
       const body = new URLSearchParams(options.body)
       checkoutSession = { ...baseSession, id: 'cs_test_purchase_123', client_reference_id: orderId, metadata: { wm_order_id: body.get('metadata[wm_order_id]'), wm_project_id: body.get('metadata[wm_project_id]'), wm_owner_id: body.get('metadata[wm_owner_id]') } }
       return { ok: true, json: async () => ({ id: checkoutSession.id, url: 'https://checkout.stripe.test/session', livemode: false, metadata: checkoutSession.metadata }) }
@@ -329,6 +358,34 @@ test('synthetic £99 purchase flows from Checkout through signed fulfillment, is
   const delivered = await webhook({ httpMethod: 'POST', body: signed.raw.toString(), headers: { 'stripe-signature': signed.signature } })
   assert.equal(delivered.statusCode, 200)
   assert.deepEqual(actions, ['paid', 'published', 'recorded', 'emailed'])
+})
+
+test('live webhook accepts only a matching signed live £99 one-off order and runs fulfillment', async () => {
+  const liveWebhookSecret = 'whsec_live_' + 'l'.repeat(32)
+  const liveSession = {
+    ...baseSession, id: 'cs_live_synthetic_12345678', livemode: true,
+    line_items: { data: [{ quantity: 1, amount_total: 9900, price: { id: setupPriceId, recurring: null } }] },
+  }
+  const event = { id: 'evt_live_synthetic_12345678', object: 'event', type: 'checkout.session.completed', livemode: true,
+    data: { object: { id: liveSession.id, metadata: liveSession.metadata } } }
+  const signed = signedEvent(event, liveWebhookSecret)
+  const actions = []
+  const email = deliveryStore()
+  const webhook = createStripeWebsiteMachineWebhook({
+    env: { WM_STRIPE_SECRET_KEY: liveApiKey, WM_STRIPE_WEBHOOK_SECRET: liveWebhookSecret, WM_STRIPE_LIVEMODE: 'true' },
+    now: () => now,
+    loadOrder: async ({ mode }) => { assert.equal(mode, 'live'); return { id: orderId, projectId, ownerId, setupPriceId, mode: 'live', content: { businessName: 'Synthetic live fixture' } } },
+    confirmPaidOrder: async ({ session, order }) => { assert.equal(session.livemode, true); assert.equal(order.mode, 'live'); actions.push('confirmed'); return { paid: true } },
+    publisher: { publishPaidProject: async ({ paid }) => { assert.equal(paid, true); actions.push('published'); return { siteId: 'synthetic-live-site', deployId: 'abcdef0123456789', url: 'https://synthetic-live.netlify.app' } } },
+    recordDeployment: async () => { actions.push('deployment-recorded') },
+    claimDeliveryEmail: async () => { const claim = await email.claim(); return { status: 'pending', shouldSend: claim.shouldSend, attemptId: claim.attemptId } },
+    finishDeliveryEmail: async (args) => { actions.push(`email-${args.outcome}`); return email.finish(args) },
+    sendDeliveryEmail: async ({ to, deliveryUrl }) => { assert.equal(to, 'synthetic@example.test'); assert.equal(deliveryUrl, 'https://synthetic-live.netlify.app'); actions.push('email-sent'); return { messageId: 're_synthetic_live' } },
+    fetchImpl: async (url) => { assert.match(url, /cs_live_synthetic/); return { ok: true, json: async () => liveSession } },
+  })
+  const response = await webhook({ httpMethod: 'POST', body: signed.raw.toString(), headers: { 'stripe-signature': signed.signature } })
+  assert.equal(response.statusCode, 200)
+  assert.deepEqual(actions, ['confirmed', 'published', 'deployment-recorded', 'email-sent', 'email-accepted'])
 })
 
 test('failed asynchronous payment is acknowledged without order confirmation, publishing, or email', async () => {
