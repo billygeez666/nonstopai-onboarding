@@ -46,37 +46,49 @@ function crc32(buffer) {
 
 // A minimal, uncompressed ZIP writer avoids shelling out or evaluating content.
 export function makeStaticWebsiteZip(html) {
-  const name = Buffer.from('index.html')
   const data = Buffer.from(html, 'utf8')
   if (data.length > 150000) throw new Error('Website file is too large.')
-  const crc = crc32(data)
-  const local = Buffer.alloc(30 + name.length)
-  local.writeUInt32LE(0x04034b50, 0)
-  local.writeUInt16LE(20, 4)
-  local.writeUInt32LE(crc, 14)
-  local.writeUInt32LE(data.length, 18)
-  local.writeUInt32LE(data.length, 22)
-  local.writeUInt16LE(name.length, 26)
-  name.copy(local, 30)
+  const headers = Buffer.from('/\n  Content-Type: text/html; charset=utf-8\n\n/index.html\n  Content-Type: text/html; charset=utf-8\n', 'utf8')
+  const entries = [{ name: 'index.html', data }, { name: '_headers', data: headers }]
+  const localEntries = []
+  const centralEntries = []
+  let localOffset = 0
 
-  const central = Buffer.alloc(46 + name.length)
-  central.writeUInt32LE(0x02014b50, 0)
-  central.writeUInt16LE(20, 4)
-  central.writeUInt16LE(20, 6)
-  central.writeUInt32LE(crc, 16)
-  central.writeUInt32LE(data.length, 20)
-  central.writeUInt32LE(data.length, 24)
-  central.writeUInt16LE(name.length, 28)
-  central.writeUInt32LE(0, 38)
-  name.copy(central, 46)
+  for (const entry of entries) {
+    const name = Buffer.from(entry.name, 'utf8')
+    const crc = crc32(entry.data)
+    const local = Buffer.alloc(30 + name.length)
+    local.writeUInt32LE(0x04034b50, 0)
+    local.writeUInt16LE(20, 4)
+    local.writeUInt32LE(crc, 14)
+    local.writeUInt32LE(entry.data.length, 18)
+    local.writeUInt32LE(entry.data.length, 22)
+    local.writeUInt16LE(name.length, 26)
+    name.copy(local, 30)
+    localEntries.push(local, entry.data)
 
+    const central = Buffer.alloc(46 + name.length)
+    central.writeUInt32LE(0x02014b50, 0)
+    central.writeUInt16LE(20, 4)
+    central.writeUInt16LE(20, 6)
+    central.writeUInt32LE(crc, 16)
+    central.writeUInt32LE(entry.data.length, 20)
+    central.writeUInt32LE(entry.data.length, 24)
+    central.writeUInt16LE(name.length, 28)
+    central.writeUInt32LE(localOffset, 42)
+    name.copy(central, 46)
+    centralEntries.push(central)
+    localOffset += local.length + entry.data.length
+  }
+
+  const centralDirectory = Buffer.concat(centralEntries)
   const end = Buffer.alloc(22)
   end.writeUInt32LE(0x06054b50, 0)
-  end.writeUInt16LE(1, 8)
-  end.writeUInt16LE(1, 10)
-  end.writeUInt32LE(central.length, 12)
-  end.writeUInt32LE(local.length + data.length, 16)
-  return Buffer.concat([local, data, central, end])
+  end.writeUInt16LE(entries.length, 8)
+  end.writeUInt16LE(entries.length, 10)
+  end.writeUInt32LE(centralDirectory.length, 12)
+  end.writeUInt32LE(localOffset, 16)
+  return Buffer.concat([...localEntries, centralDirectory, end])
 }
 
 const jsonResponse = async (response) => {

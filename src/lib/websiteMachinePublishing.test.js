@@ -28,14 +28,23 @@ test('static site archive is a ZIP containing only a fixed index.html document',
   const html = '<!doctype html><html><head><title>test</title></head><body><h1>test</h1></body></html>'
   const zip = makeStaticWebsiteZip(html)
   assert.equal(zip.readUInt32LE(0), 0x04034b50)
-  const nameLength = zip.readUInt16LE(26)
-  const extraLength = zip.readUInt16LE(28)
-  const name = zip.subarray(30, 30 + nameLength).toString('utf8')
-  const bodyStart = 30 + nameLength + extraLength
-  const bodyLength = zip.readUInt32LE(22)
-  assert.equal(name, 'index.html')
-  assert.equal(zip.readUInt16LE(8), 0, 'HTML entry uses ZIP store mode without transformations')
-  assert.equal(zip.subarray(bodyStart, bodyStart + bodyLength).toString('utf8'), html)
+  const files = new Map()
+  let offset = 0
+  while (zip.readUInt32LE(offset) === 0x04034b50) {
+    const nameLength = zip.readUInt16LE(offset + 26)
+    const extraLength = zip.readUInt16LE(offset + 28)
+    const bodyLength = zip.readUInt32LE(offset + 22)
+    const nameStart = offset + 30
+    const bodyStart = nameStart + nameLength + extraLength
+    const name = zip.subarray(nameStart, nameStart + nameLength).toString('utf8')
+    assert.equal(zip.readUInt16LE(offset + 8), 0, 'static files use ZIP store mode without transformations')
+    files.set(name, zip.subarray(bodyStart, bodyStart + bodyLength).toString('utf8'))
+    offset = bodyStart + bodyLength
+  }
+  assert.deepEqual([...files.keys()], ['index.html', '_headers'])
+  assert.equal(files.get('index.html'), html)
+  assert.match(files.get('_headers'), /^\/\n\s+Content-Type: text\/html; charset=utf-8/m)
+  assert.match(files.get('_headers'), /^\/index\.html\n\s+Content-Type: text\/html; charset=utf-8/m)
   assert.match(html, /^<!doctype html>/i)
   assert.equal(html.includes('<script'), false)
 })
@@ -141,6 +150,29 @@ test('a protected deployment response is not accepted as a verified website', as
   })
   assert.equal(calls.some(({ url, options }) => url.endsWith('/sites/') && options.method === 'POST'), false, 'reuse the existing isolated site')
   assert.equal(calls.some(({ url, options }) => url.endsWith(`/sites/${siteId}`) && options.method === 'PUT'), true, 'the deployment itself may be ready while public verification fails')
+})
+
+test('an HTML document served as text/plain is rejected before delivery verification', async () => {
+  const siteName = `wm-${projectId.replaceAll('-', '')}`
+  const deployId = '0123456789abcdef01234567'
+  const siteRecord = { projectId, ownerId, siteId, siteName, customDomain: null, currentDeployId: null, previousDeployIds: [] }
+  const fetchImpl = async (url, options = {}) => {
+    if (url.endsWith('/accounts/nonstopai-website-machine-test')) return { ok: true, status: 200, json: async () => ({ id: accountId }) }
+    if (url.endsWith(`/sites/${siteId}/metadata`)) return { ok: true, status: 200, json: async () => ({ website_machine_project_id: projectId }) }
+    if (url.endsWith(`/sites/${siteId}`) && !options.method) return { ok: true, status: 200, json: async () => ({ id: siteId, account_id: accountId, name: siteName, ssl_url: `https://${siteName}.netlify.app` }) }
+    if (url.endsWith(`/sites/${siteId}`) && options.method === 'PUT') return { ok: true, status: 200, json: async () => ({ id: deployId, site_id: siteId, state: 'ready', deploy_ssl_url: `https://${deployId}--${siteName}.netlify.app` }) }
+    if (url === `https://${deployId}--${siteName}.netlify.app`) {
+      return { ok: true, status: 200, headers: new Headers({ 'content-type': 'text/plain; charset=UTF-8' }), text: async () => '<!doctype html><h1>A&amp;B Garage</h1>' }
+    }
+    throw new Error(`Unexpected request ${url}`)
+  }
+  const publisher = createNetlifyCustomerPublisher({ env, fetchImpl, persistSite: async () => {} })
+
+  await assert.rejects(publisher.publishPaidProject({ paid: true, projectId, ownerId, content, siteRecord }), (error) => {
+    assert.equal(error.code, 'CUSTOMER_DEPLOY_MIME_TYPE_INVALID')
+    assert.equal(error.stage, 'netlify_public_verify')
+    return true
+  })
 })
 
 test('custom domain must be verified and unused before a customer site is created', async () => {
