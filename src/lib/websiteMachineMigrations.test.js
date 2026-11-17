@@ -5,7 +5,7 @@ import { readFileSync } from 'node:fs'
 const commerce = readFileSync(new URL('../../supabase/migrations/202611160003_website_machine_orders_and_sites.sql', import.meta.url), 'utf8')
 const oneOff = readFileSync(new URL('../../supabase/migrations/202611160004_website_machine_99_test_only.sql', import.meta.url), 'utf8')
 const testerAllowlist = readFileSync(new URL('../../supabase/migrations/20261116223008_website_machine_staging_checkout_tester_allowlist.sql', import.meta.url), 'utf8')
-const emailDelivery = readFileSync(new URL('../../supabase/migrations/20261117144545_website_machine_email_delivery_tracking.sql', import.meta.url), 'utf8')
+const emailDelivery = readFileSync(new URL('../../supabase/migrations/20261117150122_website_machine_email_delivery_tracking.sql', import.meta.url), 'utf8')
 
 test('commerce migration seeds and leaves every Website Machine Stripe offer inactive', () => {
   const offerInsert = commerce.match(/insert into public\.wm_offer_prices[\s\S]*?on conflict \(mode, purpose\) do nothing;/i)?.[0]
