@@ -154,12 +154,13 @@ test('staging checkout fails closed when tester authorization is unavailable', a
 test('checkout uses authenticated project ownership and creates Stripe-hosted session with exact prices', async () => {
   const calls = []
   let savedSession
+  let savedOrderRequest
   const handler = createWebsiteMachineCheckoutApi({
     env: { WM_STRIPE_SECRET_KEY: apiKey, WM_STRIPE_PRICE_ID: setupPriceId, URL: 'https://staging.example.net' },
     verifyUser: async (token) => token === 'user-token' ? { id: ownerId } : null,
     isAuthorizedTester: async ({ user }) => user.id === ownerId,
     loadOwnedProject: async ({ ownerId: requestedOwner }) => requestedOwner === ownerId ? { id: projectId, owner_id: ownerId } : null,
-    createOrder: async () => ({ id: orderId }),
+    createOrder: async (value) => { savedOrderRequest = value; return { id: orderId, status: 'pending' } },
     saveCheckoutSession: async (value) => { savedSession = value },
     fetchImpl: async (url, options = {}) => {
       calls.push({ url, options })
@@ -173,6 +174,7 @@ test('checkout uses authenticated project ownership and creates Stripe-hosted se
   const response = await handler({ httpMethod: 'POST', headers: { authorization: 'Bearer user-token' }, body: JSON.stringify({ projectId, idempotencyKey: 'wm-checkout-test-02' }) })
   assert.equal(response.statusCode, 200)
   assert.equal(JSON.parse(response.body).checkoutUrl, 'https://checkout.stripe.test/session')
+  assert.equal(savedOrderRequest.idempotencyKey, `wm-project-${ownerId}-${projectId}`)
   assert.equal(savedSession.sessionId, 'cs_test_12345678')
   const checkout = new URLSearchParams(calls[1].options.body)
   assert.equal(checkout.get('line_items[0][price]'), setupPriceId)
@@ -183,6 +185,72 @@ test('checkout uses authenticated project ownership and creates Stripe-hosted se
   assert.equal(checkout.get('metadata[wm_project_id]'), projectId)
   assert.equal(checkout.get('success_url').includes('{CHECKOUT_SESSION_ID}'), true)
   assert.equal(calls[1].options.headers.authorization, `Bearer ${apiKey}`)
+})
+
+test('checkout retries reuse one project order and the already-created Stripe session', async () => {
+  const calls = []
+  let order = { id: orderId, status: 'pending', checkout_session_id: null }
+  let savedOrderKey
+  let createSessionCalls = 0
+  const handler = createWebsiteMachineCheckoutApi({
+    env: { WM_STRIPE_SECRET_KEY: apiKey, WM_STRIPE_PRICE_ID: setupPriceId },
+    verifyUser: async () => ({ id: ownerId }),
+    isAuthorizedTester: async () => true,
+    loadOwnedProject: async () => ({ id: projectId, owner_id: ownerId }),
+    createOrder: async ({ idempotencyKey }) => {
+      if (savedOrderKey) assert.equal(idempotencyKey, savedOrderKey)
+      savedOrderKey = idempotencyKey
+      return order
+    },
+    saveCheckoutSession: async ({ sessionId }) => { order = { ...order, checkout_session_id: sessionId } },
+    fetchImpl: async (url, options = {}) => {
+      calls.push({ url, options })
+      if (url.includes('/prices/')) return { ok: true, json: async () => ({ id: setupPriceId, active: true, livemode: false, currency: 'gbp', unit_amount: 9900, recurring: null, product: { active: true, name: 'Website Machine One-off' } }) }
+      if (url.includes('/checkout/sessions/cs_test_')) return { ok: true, json: async () => ({
+        id: 'cs_test_12345678', url: 'https://checkout.stripe.test/session', livemode: false,
+        status: 'open', mode: 'payment', currency: 'gbp', amount_total: 9900, client_reference_id: orderId,
+        metadata: { wm_order_id: orderId, wm_project_id: projectId, wm_owner_id: ownerId },
+      }) }
+      if (url.includes('/checkout/sessions')) {
+        createSessionCalls += 1
+        return { ok: true, json: async () => ({ id: 'cs_test_12345678', url: 'https://checkout.stripe.test/session', livemode: false, metadata: { wm_order_id: orderId } }) }
+      }
+      throw new Error(`Unexpected request ${url}`)
+    },
+  })
+  const invoke = (idempotencyKey) => handler({
+    httpMethod: 'POST', headers: { authorization: 'Bearer user-token', 'idempotency-key': idempotencyKey },
+    body: JSON.stringify({ projectId, idempotencyKey }),
+  })
+
+  const first = await invoke('client-key-first-attempt')
+  const second = await invoke('client-key-after-reload')
+  assert.equal(first.statusCode, 200)
+  assert.equal(second.statusCode, 200)
+  assert.equal(JSON.parse(first.body).checkoutUrl, JSON.parse(second.body).checkoutUrl)
+  assert.equal(savedOrderKey, `wm-project-${ownerId}-${projectId}`)
+  assert.equal(createSessionCalls, 1)
+  assert.equal(calls.filter(({ url }) => url.includes('/checkout/sessions/cs_test_')).length, 1)
+})
+
+test('checkout will not create another Stripe session for an order that is already paid', async () => {
+  let sessionCreates = 0
+  const handler = createWebsiteMachineCheckoutApi({
+    env: { WM_STRIPE_SECRET_KEY: apiKey, WM_STRIPE_PRICE_ID: setupPriceId },
+    verifyUser: async () => ({ id: ownerId }),
+    isAuthorizedTester: async () => true,
+    loadOwnedProject: async () => ({ id: projectId, owner_id: ownerId }),
+    createOrder: async () => ({ id: orderId, status: 'delivered' }),
+    fetchImpl: async (url) => {
+      if (url.includes('/prices/')) return { ok: true, json: async () => ({ id: setupPriceId, active: true, livemode: false, currency: 'gbp', unit_amount: 9900, recurring: null, product: { active: true, name: 'Website Machine One-off' } }) }
+      if (url.includes('/checkout/sessions')) sessionCreates += 1
+      throw new Error('paid order must stop before Stripe Checkout')
+    },
+  })
+  const response = await handler({ httpMethod: 'POST', headers: { authorization: 'Bearer user-token' }, body: JSON.stringify({ projectId }) })
+  assert.equal(response.statusCode, 409)
+  assert.match(JSON.parse(response.body).error, /already has a paid or completed/i)
+  assert.equal(sessionCreates, 0)
 })
 
 test('Stripe webhook does not fulfill unpaid sessions and only publishes once confirmed by durable storage', async () => {

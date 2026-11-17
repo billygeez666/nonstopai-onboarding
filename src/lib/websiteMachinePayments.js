@@ -66,8 +66,6 @@ export function createWebsiteMachineCheckoutApi({
       if (!authorizedTester) return { statusCode: 403, body: JSON.stringify({ error: 'Staging checkout is restricted to approved testers.' }) }
       const body = JSON.parse(event.body || '{}')
       if (!/^[0-9a-f-]{36}$/i.test(body.projectId || '')) return { statusCode: 400, body: JSON.stringify({ error: 'A valid project is required.' }) }
-      const requestKey = event.headers?.['idempotency-key'] || event.headers?.['Idempotency-Key'] || body.idempotencyKey || ''
-      if (!/^[A-Za-z0-9_-]{12,100}$/.test(requestKey)) return { statusCode: 400, body: JSON.stringify({ error: 'A valid checkout idempotency key is required.' }) }
       if (body.domain || body.domainChallenge) {
         const challengeExpiry = Date.parse(body.domainChallenge?.expiresAt || '')
         if (!body.domain || !body.domainChallenge || body.domainChallenge.domain !== body.domain || challengeExpiry <= Date.now() || challengeExpiry - Date.now() > 60 * 60 * 1000 || !await verifyDomain({ domain: body.domain, token: body.domainChallenge.token })) {
@@ -76,6 +74,11 @@ export function createWebsiteMachineCheckoutApi({
       }
       const project = await loadOwnedProject?.({ token, projectId: body.projectId, ownerId: user.id })
       if (!project || project.owner_id !== user.id) return { statusCode: 404, body: JSON.stringify({ error: 'Project not found.' }) }
+
+      // One paid website order is allowed per authenticated project. Derive
+      // the key on the server so retries, reloads, and parallel tabs cannot
+      // create fresh orders by supplying a new client-generated value.
+      const requestKey = `wm-project-${user.id}-${project.id}`
 
       const stripeHeaders = { authorization: `Bearer ${env.WM_STRIPE_SECRET_KEY}` }
       const priceResponse = await fetchImpl(`${API}/prices/${encodeURIComponent(env.WM_STRIPE_PRICE_ID)}?expand%5B%5D=product`, { headers: stripeHeaders })
@@ -87,6 +90,24 @@ export function createWebsiteMachineCheckoutApi({
 
       const order = await createOrder({ token, project, setupPriceId: price.id, monthlyPriceId: null, domain: body.domain || null, domainChallenge: body.domainChallenge || null, mode: 'test', idempotencyKey: requestKey })
       if (!isId(order?.id)) return { statusCode: 500, body: JSON.stringify({ error: 'Order could not be prepared.' }) }
+      if (order.status && order.status !== 'pending') {
+        return { statusCode: 409, body: JSON.stringify({ error: 'This project already has a paid or completed Website Machine order.' }) }
+      }
+      const existingCheckoutSessionId = order.checkoutSessionId || order.checkout_session_id
+      if (existingCheckoutSessionId) {
+        const existingResponse = await fetchImpl(`${API}/checkout/sessions/${encodeURIComponent(existingCheckoutSessionId)}`, { headers: stripeHeaders })
+        if (!existingResponse.ok) return { statusCode: 503, body: JSON.stringify({ error: 'The existing checkout could not be verified. Contact support before trying again.' }) }
+        const existing = await existingResponse.json()
+        const matchesOrder = existing?.id === existingCheckoutSessionId && existing?.livemode === liveMode &&
+          existing?.mode === 'payment' && existing?.currency === 'gbp' && existing?.amount_total === WEBSITE_MACHINE_ONE_OFF_AMOUNT &&
+          existing?.client_reference_id === order.id && existing?.metadata?.wm_order_id === order.id &&
+          existing?.metadata?.wm_project_id === project.id && existing?.metadata?.wm_owner_id === user.id
+        if (!matchesOrder) return { statusCode: 409, body: JSON.stringify({ error: 'The existing checkout does not match this project. Contact support before trying again.' }) }
+        if (existing.status === 'open' && typeof existing.url === 'string') {
+          return { statusCode: 200, headers: { 'content-type': 'application/json', 'cache-control': 'no-store' }, body: JSON.stringify({ checkoutUrl: existing.url }) }
+        }
+        return { statusCode: 409, body: JSON.stringify({ error: 'This project already has a completed or expired checkout. Contact support before trying again.' }) }
+      }
       const form = new URLSearchParams({
         mode: 'payment',
         customer_creation: 'always',
