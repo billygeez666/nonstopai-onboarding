@@ -1,6 +1,6 @@
 import { createHmac, timingSafeEqual } from 'node:crypto'
 import { createDomainChallenge, createNetlifyCustomerPublisher } from './websiteMachinePublishing.js'
-import { createStripeWebsiteMachineWebhook, createWebsiteMachineCheckoutApi, isStripeTestSecretKey } from './websiteMachinePayments.js'
+import { createStripeWebsiteMachineWebhook, createWebsiteMachineCheckoutApi, isStripeTestSecretKey, isPaidWebsiteMachineSession } from './websiteMachinePayments.js'
 import { createWebsiteMachineDeliveryEmail } from './websiteMachineEmail.js'
 import { getWebsiteMachineConfig } from './websiteMachineServer.js'
 
@@ -260,6 +260,167 @@ export function createWebsiteMachineCustomerSiteHandler({ env = process.env, fet
       return { statusCode: 200, headers: { 'content-type': 'application/json', 'cache-control': 'no-store' }, body: JSON.stringify(rows[0]) }
     } catch {
       return { statusCode: 502, body: 'Delivery status could not be read.' }
+    }
+  }
+}
+
+const RECOVERY_ORDER_ID = '38bdba88-0905-4045-8f46-0c83d349adfb'
+const RECOVERY_SITE_ID = 'dde29a46-a3d5-4dec-963b-1304b1c85e1f'
+const RECOVERY_APPROVED_RECIPIENT = 'billygeez888@gmail.com'
+const EMAIL_RECOVERY_SENDER = 'websites@mail.ai-receptionist.work'
+const STRIPE_API = 'https://api.stripe.com/v1'
+const emailAddressPattern = /^[^\s@<>"']+@[^\s@<>"']+\.[^\s@<>"']{2,}$/
+
+function recoveryConfirmationToken(payload, secret) {
+  const encoded = Buffer.from(JSON.stringify(payload)).toString('base64url')
+  const mac = createHmac('sha256', secret).update(`wm-email-recovery-v1\n${encoded}`).digest('hex')
+  return `${encoded}.${mac}`
+}
+
+function verifyRecoveryConfirmationToken(token, secret, now) {
+  if (typeof token !== 'string' || token.length > 2000) return null
+  const [encoded, suppliedHex, extra] = token.split('.')
+  if (!encoded || !/^[a-f0-9]{64}$/i.test(suppliedHex || '') || extra !== undefined) return null
+  const expected = createHmac('sha256', secret).update(`wm-email-recovery-v1\n${encoded}`).digest()
+  const supplied = Buffer.from(suppliedHex, 'hex')
+  if (supplied.length !== expected.length || !timingSafeEqual(supplied, expected)) return null
+  try {
+    const payload = JSON.parse(Buffer.from(encoded, 'base64url').toString('utf8'))
+    if (payload.purpose !== 'send-one-time-recovery' || payload.orderId !== RECOVERY_ORDER_ID ||
+        !Number.isSafeInteger(payload.expiresAt) || payload.expiresAt < Math.floor(now() / 1000) ||
+        !emailAddressPattern.test(payload.recipient || '') || !/^[0-9a-f-]{36}$/i.test(payload.ownerId || '')) return null
+    return payload
+  } catch { return null }
+}
+
+/**
+ * Owner-authenticated, one-time recovery for the specified legacy sandbox order.
+ * The prepare phase verifies Checkout and returns a short-lived recipient-bound
+ * token. The send phase atomically claims the sole recovery attempt before Resend.
+ */
+export function createWebsiteMachineEmailRecoveryHandler({ env = process.env, fetchImpl = fetch, now = () => Date.now() } = {}) {
+  const config = runtime(env)
+  if (!stagingCommerceReady(config) || config.deliveryFromEmail.toLowerCase() !== EMAIL_RECOVERY_SENDER) {
+    return async () => ({ statusCode: 503, body: 'Website Machine email recovery is not configured.' })
+  }
+
+  const rpc = createRpc({ baseUrl: config.url, publishableKey: config.publishableKey, fetchImpl })
+  const failJson = (statusCode, error) => ({ statusCode, headers: { 'content-type': 'application/json', 'cache-control': 'no-store' }, body: JSON.stringify({ error }) })
+
+  async function loadRecoveryContext(orderId, accessToken) {
+    const result = await rpc('wm_get_payment_order', {
+      p_order_id: orderId, p_mode: 'test', p_signature: signature(`test\nget_order:${orderId}`, config.rpcSecret),
+    })
+    if (!result || result.id !== RECOVERY_ORDER_ID || result.mode !== 'test' || result.status !== 'delivering' ||
+        result.amountTotal !== 9900 || result.currency !== 'gbp' || !result.checkoutSessionId || !result.ownerId || !result.projectId) {
+      throw Object.assign(new Error('This order is not eligible for one-time email recovery.'), { statusCode: 409 })
+    }
+
+    const siteResponse = await fetchImpl(`${config.url}/rest/v1/wm_customer_sites?project_id=eq.${encodeURIComponent(result.projectId)}&owner_id=eq.${encodeURIComponent(result.ownerId)}&select=site_id,site_name,status,site_url&limit=1`, {
+      headers: { apikey: config.publishableKey, authorization: `Bearer ${accessToken}` },
+    })
+    if (!siteResponse.ok) throw Object.assign(new Error('Published website status could not be verified.'), { statusCode: 502 })
+    const sites = await siteResponse.json()
+    const site = sites[0]
+    const expectedSiteName = `wm-${result.projectId.replace(/-/g, '')}`
+    const expectedSiteUrl = `https://${expectedSiteName}.netlify.app`
+    if (!site || site.site_id !== RECOVERY_SITE_ID || site.status !== 'delivered' || site.site_name !== expectedSiteName || site.site_url !== expectedSiteUrl) {
+      throw Object.assign(new Error('The existing customer website is not verified as published.'), { statusCode: 409 })
+    }
+
+    const websiteResponse = await fetchImpl(site.site_url, { method: 'GET', redirect: 'manual' })
+    if (!websiteResponse.ok || websiteResponse.status !== 200 || !/^text\/html(?:;|$)/i.test(websiteResponse.headers.get('content-type') || '')) {
+      throw Object.assign(new Error('The existing customer website failed its public delivery check.'), { statusCode: 409 })
+    }
+
+    const stripeResponse = await fetchImpl(`${STRIPE_API}/checkout/sessions/${encodeURIComponent(result.checkoutSessionId)}?expand%5B%5D=line_items.data.price`, {
+      headers: { authorization: `Bearer ${config.stripeSecret}` },
+    })
+    if (!stripeResponse.ok) throw Object.assign(new Error('Original sandbox Checkout session could not be verified.'), { statusCode: 502 })
+    const checkout = await stripeResponse.json()
+    if (checkout.id !== result.checkoutSessionId || checkout.client_reference_id !== result.id ||
+        !isPaidWebsiteMachineSession(checkout, {
+          orderId: result.id, projectId: result.projectId, ownerId: result.ownerId,
+          setupPriceId: result.setupPriceId, liveMode: false,
+        })) {
+      throw Object.assign(new Error('Original sandbox Checkout session does not match the paid order.'), { statusCode: 409 })
+    }
+    const recipient = String(checkout.customer_details?.email || checkout.customer_email || '').trim().toLowerCase()
+    if (!emailAddressPattern.test(recipient) || recipient !== RECOVERY_APPROVED_RECIPIENT) {
+      throw Object.assign(new Error('Original Checkout recipient does not match the approved recovery recipient.'), { statusCode: 409 })
+    }
+    return { order: result, site, recipient }
+  }
+
+  async function authorize(event) {
+    const token = (event.headers?.authorization || event.headers?.Authorization || '').match(/^Bearer\s+(.+)$/i)?.[1]
+    if (!token) throw Object.assign(new Error('Sign in as the paid order owner.'), { statusCode: 401 })
+    const response = await fetchImpl(`${config.url}/auth/v1/user`, { headers: { apikey: config.publishableKey, authorization: `Bearer ${token}` } })
+    if (!response.ok) throw Object.assign(new Error('Sign in as the paid order owner.'), { statusCode: 401 })
+    return { accessToken: token, user: await response.json() }
+  }
+
+  return async (event) => {
+    if (event.httpMethod !== 'POST') return failJson(405, 'Method not allowed.')
+    if (Buffer.byteLength(event.body || '') > 3000) return failJson(413, 'Request is too large.')
+    try {
+      const { accessToken, user } = await authorize(event)
+      const body = JSON.parse(event.body || '{}')
+      if (body.orderId !== RECOVERY_ORDER_ID || !['prepare','send'].includes(body.phase)) return failJson(404, 'Recovery order not found.')
+      const context = await loadRecoveryContext(body.orderId, accessToken)
+      if (user.id !== context.order.ownerId) return failJson(403, 'Only the paid order owner can recover this delivery email.')
+
+      if (body.phase === 'prepare') {
+        const expiresAt = Math.floor(now() / 1000) + 300
+        const token = recoveryConfirmationToken({
+          purpose: 'send-one-time-recovery', orderId: body.orderId,
+          ownerId: context.order.ownerId, recipient: context.recipient, expiresAt,
+        }, config.rpcSecret)
+        return { statusCode: 200, headers: { 'content-type': 'application/json', 'cache-control': 'no-store' }, body: JSON.stringify({ recipient: context.recipient, websiteUrl: context.site.site_url, confirmationToken: token, expiresAt }) }
+      }
+
+      const confirmation = verifyRecoveryConfirmationToken(body.confirmationToken, config.rpcSecret, now)
+      if (!confirmation || confirmation.ownerId !== user.id || confirmation.recipient !== context.recipient) return failJson(403, 'Recovery confirmation expired or does not match the verified Checkout recipient.')
+      const claimMessage = `test\nclaim_one_time_email_recovery\n${body.orderId}\n${user.id}\n${context.recipient}`
+      const claim = await rpc('wm_claim_one_time_email_recovery', {
+        p_order_id: body.orderId, p_owner_id: user.id, p_recipient: context.recipient,
+        p_mode: 'test', p_signature: signature(claimMessage, config.rpcSecret),
+      })
+      if (claim?.shouldSend !== true || !claim.attemptId) return failJson(409, 'The one-time recovery has already been claimed or this email outcome changed.')
+
+      const finish = async (outcome, messageId = null, errorCode = null) => {
+        const safeMessageId = typeof messageId === 'string' ? messageId : ''
+        const safeErrorCode = typeof errorCode === 'string' && /^[A-Z0-9_]{1,80}$/.test(errorCode) ? errorCode : 'DELIVERY_RECOVERY_FAILED'
+        const finishMessage = ['test', body.orderId, claim.attemptId, outcome, safeMessageId, outcome === 'accepted' ? '' : safeErrorCode].join('\n')
+        const saved = await rpc('wm_finish_one_time_email_recovery', {
+          p_order_id: body.orderId, p_mode: 'test', p_attempt_id: claim.attemptId,
+          p_outcome: outcome, p_provider_message_id: safeMessageId || null,
+          p_error_code: outcome === 'accepted' ? null : safeErrorCode,
+          p_signature: signature(`test\nfinish_one_time_email_recovery\n${finishMessage.slice('test\n'.length)}`, config.rpcSecret),
+        })
+        if (saved !== true) throw new Error('Recovery outcome could not be saved; do not retry automatically.')
+      }
+
+      let sent
+      try {
+        sent = await createWebsiteMachineDeliveryEmail({ apiKey: config.deliveryEmailApiKey, from: config.deliveryFromEmail, fetchImpl })(
+          { to: context.recipient, businessName: context.order.content?.businessName || 'Your business', deliveryUrl: context.site.site_url, orderId: body.orderId },
+        )
+      } catch (error) {
+        const outcome = error?.deliveryOutcome === 'failed' ? 'failed' : 'unknown'
+        try { await finish(outcome, null, error?.code || 'DELIVERY_RECOVERY_FAILED') }
+        catch { return failJson(502, 'Resend may have processed this request; recovery is blocked pending reconciliation. Do not retry.') }
+        return failJson(502, outcome === 'failed'
+          ? 'Resend rejected the one-time recovery. No automatic retry was made.'
+          : 'Resend outcome is unknown. No automatic retry was made.')
+      }
+
+      try { await finish('accepted', sent.messageId || null) }
+      catch { return failJson(502, 'Resend accepted the request, but its result could not be recorded. Do not retry.') }
+      return { statusCode: 200, headers: { 'content-type': 'application/json', 'cache-control': 'no-store' }, body: JSON.stringify({ status: 'accepted', recipient: context.recipient, websiteUrl: context.site.site_url, messageId: sent.messageId || null }) }
+    } catch (error) {
+      const statusCode = Number.isInteger(error?.statusCode) ? error.statusCode : 400
+      return failJson(statusCode, error?.message || 'One-time recovery could not be processed.')
     }
   }
 }

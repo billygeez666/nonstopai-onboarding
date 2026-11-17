@@ -6,6 +6,7 @@ const commerce = readFileSync(new URL('../../supabase/migrations/202611160003_we
 const oneOff = readFileSync(new URL('../../supabase/migrations/202611160004_website_machine_99_test_only.sql', import.meta.url), 'utf8')
 const testerAllowlist = readFileSync(new URL('../../supabase/migrations/20261116223008_website_machine_staging_checkout_tester_allowlist.sql', import.meta.url), 'utf8')
 const emailDelivery = readFileSync(new URL('../../supabase/migrations/20261117150122_website_machine_email_delivery_tracking.sql', import.meta.url), 'utf8')
+const emailRecovery = readFileSync(new URL('../../supabase/migrations/20261117163153_website_machine_one_time_email_recovery_20261117.sql', import.meta.url), 'utf8')
 
 test('commerce migration seeds and leaves every Website Machine Stripe offer inactive', () => {
   const offerInsert = commerce.match(/insert into public\.wm_offer_prices[\s\S]*?on conflict \(mode, purpose\) do nothing;/i)?.[0]
@@ -83,4 +84,17 @@ test('email migration tracks provider outcomes privately and does not mark deplo
   assert.match(emailDelivery, /v_delivery\.status='unknown'[\s\S]*?shouldSend',false/i)
   assert.doesNotMatch(emailDelivery, /\b(delete from|truncate|drop table)\b/i)
   assert.doesNotMatch(emailDelivery, /update public\.wm_offer_prices|set\s+active\s*=/i)
+})
+
+test('one-time email recovery preserves legacy unknown evidence and can never be claimed twice', () => {
+  assert.match(emailRecovery, /wm_delivery_email_recoveries[\s\S]*?prior_status text not null check \(prior_status = 'unknown'\)/i)
+  assert.match(emailRecovery, /order_id uuid primary key references public\.wm_orders/i)
+  assert.match(emailRecovery, /p_order_id is distinct from '38bdba88-0905-4045-8f46-0c83d349adfb'/i)
+  assert.match(emailRecovery, /v_email\.status <> 'unknown'[\s\S]*?LEGACY_EMAIL_OUTCOME_UNVERIFIED/i)
+  assert.match(emailRecovery, /wm_delivery_email_recoveries\([\s\S]*?on conflict\(order_id\) do nothing/i)
+  assert.match(emailRecovery, /if p_outcome='accepted' then[\s\S]*?update public\.wm_orders set status='delivered'/i)
+  assert.match(emailRecovery, /alter table public\.wm_delivery_email_recoveries enable row level security/i)
+  assert.match(emailRecovery, /revoke all on public\.wm_delivery_email_recoveries from public, anon, authenticated, service_role/i)
+  assert.doesNotMatch(emailRecovery, /\b(delete from|truncate|drop table)\b/i)
+  assert.doesNotMatch(emailRecovery, /update public\.wm_offer_prices|set\s+active\s*=/i)
 })

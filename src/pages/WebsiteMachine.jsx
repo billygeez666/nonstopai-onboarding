@@ -20,6 +20,7 @@ const example = {
   verifiedInfo: 'MOT testing\nVehicle servicing\nVehicle repairs\nLocated in Kirkstall, Leeds',
 }
 const initialContent = generateWebsiteContent(example).content
+const emailRecoveryOrderId = '38bdba88-0905-4045-8f46-0c83d349adfb'
 
 const fields = [
   ['businessName', 'Business name'], ['industry', 'Industry'], ['location', 'Location'],
@@ -48,6 +49,9 @@ export default function WebsiteMachine() {
   const [authError, setAuthError] = useState('')
   const paymentNotice = new URLSearchParams(window.location.search).get('payment')
   const returnProjectId = new URLSearchParams(window.location.search).get('project_id')
+  const emailRecoveryMode = new URLSearchParams(window.location.search).get('wm_recovery') === emailRecoveryOrderId
+  const [recoveryConfirmation, setRecoveryConfirmation] = useState(null)
+  const [recoveryMessage, setRecoveryMessage] = useState('')
   const createKey = useRef('')
   const previewFrame = useRef(null)
   const actionState = getWebsiteMachineActionState({ session, busyAction, project })
@@ -288,6 +292,48 @@ export default function WebsiteMachine() {
     }
   }
 
+  async function prepareEmailRecovery() {
+    setBusyAction('Verifying original checkout recipient')
+    setRecoveryMessage('')
+    try {
+      if (!session) throw new Error('Sign in as the paid order owner to continue.')
+      const response = await request('/.netlify/functions/website-machine-recover-email', {
+        method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${session}` },
+        body: JSON.stringify({ phase: 'prepare', orderId: emailRecoveryOrderId }),
+      })
+      const result = await response.json()
+      if (!response.ok) throw new Error(result.error || 'Original checkout could not be verified.')
+      setRecoveryConfirmation(result)
+      setRecoveryMessage(`Verified recipient: ${result.recipient}. The email will link to the existing published website.`)
+    } catch (error) {
+      setRecoveryConfirmation(null)
+      setRecoveryMessage(error.message)
+    } finally {
+      setBusyAction('')
+    }
+  }
+
+  async function sendEmailRecovery() {
+    if (!recoveryConfirmation?.confirmationToken) return
+    setBusyAction('Sending one authorized recovery email')
+    setRecoveryMessage('')
+    try {
+      const response = await request('/.netlify/functions/website-machine-recover-email', {
+        method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${session}` },
+        body: JSON.stringify({ phase: 'send', orderId: emailRecoveryOrderId, confirmationToken: recoveryConfirmation.confirmationToken }),
+      })
+      const result = await response.json()
+      if (!response.ok) throw new Error(result.error || 'Recovery did not complete. Do not retry automatically.')
+      setRecoveryConfirmation(null)
+      setRecoveryMessage(`Resend accepted the email for ${result.recipient}. Website: ${result.websiteUrl}. Message ID: ${result.messageId || 'not returned'}.`)
+    } catch (error) {
+      setRecoveryConfirmation(null)
+      setRecoveryMessage(error.message)
+    } finally {
+      setBusyAction('')
+    }
+  }
+
   return (
     <main className="wm-app">
       <header className="wm-topbar"><a href="/" className="wm-brand">NONSTOP <span>AI</span></a><span className="wm-local">MVP PROTOTYPE · CUSTOMER SITES UNPUBLISHED</span></header>
@@ -377,6 +423,14 @@ export default function WebsiteMachine() {
           {serviceState && <p className="wm-service-state" role="status">{serviceState}</p>}
           {paymentNotice === 'processing' && <p className="wm-service-state" role="status">Payment is being confirmed. Website delivery starts only after the signed Stripe confirmation is verified.</p>}
           {customerSite?.status === 'delivered' && <p className="wm-service-state" role="status">Your website is live. <a href={customerSite.site_url} target="_blank" rel="noreferrer">Open customer website ↗</a></p>}
+          {emailRecoveryMode && <section className="wm-service-state" aria-labelledby="wm-email-recovery-title">
+            <strong id="wm-email-recovery-title">One-time email recovery for the existing paid test order</strong>
+            <p>We will verify the original Stripe Checkout recipient and the already-published website before sending. This does not create a payment or deploy a site.</p>
+            {!recoveryConfirmation
+              ? <button type="button" onClick={prepareEmailRecovery} disabled={!session || busy}>Verify checkout recipient</button>
+              : <><p>Confirm one email to <b>{recoveryConfirmation.recipient}</b> containing <a href={recoveryConfirmation.websiteUrl} target="_blank" rel="noreferrer">the existing website link</a>.</p><button type="button" onClick={sendEmailRecovery} disabled={!session || busy}>Send one recovery email</button></>}
+            {recoveryMessage && <p role="status">{recoveryMessage}</p>}
+          </section>}
           {paymentNotice === 'cancelled' && <p className="wm-service-state" role="status">Checkout was cancelled. No website has been published.</p>}
           {publishedPreviewUrl && <a className="wm-published-preview-link" href={publishedPreviewUrl} target="_blank" rel="noreferrer">Open secure website preview ↗</a>}
           <section className="wm-checkout-panel" aria-labelledby="wm-delivery-title">

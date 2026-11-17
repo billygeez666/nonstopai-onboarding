@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { createHmac } from 'node:crypto'
-import { createWebsiteMachineCheckoutHandler, createWebsiteMachineCustomerSiteHandler, createWebsiteMachineReadinessHandler, createWebsiteMachineStripeWebhookHandler } from './websiteMachineCommerceServer.js'
+import { createWebsiteMachineCheckoutHandler, createWebsiteMachineCustomerSiteHandler, createWebsiteMachineEmailRecoveryHandler, createWebsiteMachineReadinessHandler, createWebsiteMachineStripeWebhookHandler } from './websiteMachineCommerceServer.js'
 import { getWebsiteMachineConfig } from './websiteMachineServer.js'
 
 const supabase = 'https://lqywsbqctoydtdqvjzzw.supabase.co'
@@ -242,4 +242,133 @@ test('customer site status requires the owner session and returns no row for ano
   assert.equal(JSON.parse(response.body).status, 'delivered')
   assert.match(calls[1], new RegExp(`owner_id=eq.${ownerId}`))
   assert.equal((await handler({ httpMethod: 'GET', rawUrl: 'https://staging.test/.netlify/functions/website-machine-customer-site?project_id=invalid' })).statusCode, 401)
+})
+
+test('one-time recovery verifies the original paid Checkout, claims before Resend, and records acceptance', async () => {
+  const orderId = '38bdba88-0905-4045-8f46-0c83d349adfb'
+  const projectId = '71fa380e-9595-4641-ac72-b247899ecab8'
+  const ownerId = '8523dde0-5e1e-4753-9dc2-abc4dc531e12'
+  const accessToken = `eyJ${'r'.repeat(120)}`
+  const siteName = `wm-${projectId.replace(/-/g, '')}`
+  const sessionId = 'cs_test_recovery_12345678'
+  const calls = []
+  let recoveryClaimed = false
+  const env = {
+    WM_RUNTIME_ENV: 'staging', WM_STAGING_PUBLIC_URL: 'https://bendarus.netlify.app',
+    WM_STAGING_SUPABASE_URL: supabase, WM_STAGING_SUPABASE_PUBLISHABLE_KEY: 'publishable-test-key',
+    STRIPE_SECRET_KEY: 'sk_test_synthetic', STRIPE_WEBHOOK_SECRET: 'whsec_synthetic', STRIPE_PRICE_ID: 'price_test_fixture_website_machine_99',
+    WM_STAGING_PAYMENT_RPC_SECRET: 'synthetic-test-payment-rpc-secret-0123456789',
+    WM_STAGING_NETLIFY_CUSTOMER_TOKEN: 'synthetic-netlify-token', WM_STAGING_NETLIFY_ACCOUNT_SLUG: 'website-machine',
+    WM_STAGING_EMAIL_API_KEY: 'synthetic-resend-key', WM_STAGING_DELIVERY_FROM_EMAIL: 'websites@mail.ai-receptionist.work',
+  }
+  const checkout = {
+    id: sessionId, object: 'checkout.session', livemode: false, status: 'complete', payment_status: 'paid', mode: 'payment',
+    currency: 'gbp', amount_total: 9900, client_reference_id: orderId,
+    customer_details: { email: 'billygeez888@gmail.com' },
+    metadata: { wm_order_id: orderId, wm_project_id: projectId, wm_owner_id: ownerId },
+    line_items: { data: [{ quantity: 1, amount_total: 9900, price: { id: 'price_test_fixture_website_machine_99', recurring: null } }] },
+  }
+  const handler = createWebsiteMachineEmailRecoveryHandler({ env, fetchImpl: async (url, options = {}) => {
+    calls.push({ url, options })
+    if (url.endsWith('/auth/v1/user')) return { ok: true, status: 200, json: async () => ({ id: ownerId }) }
+    if (url.endsWith('/rpc/wm_get_payment_order')) return { ok: true, status: 200, json: async () => ({
+      id: orderId, mode: 'test', status: 'delivering', ownerId, projectId, amountTotal: 9900, currency: 'gbp',
+      setupPriceId: 'price_test_fixture_website_machine_99', checkoutSessionId: sessionId, content: { businessName: 'Northstar Motor Works' },
+    }) }
+    if (url.includes('/rest/v1/wm_customer_sites?')) return { ok: true, status: 200, json: async () => [{ site_id: 'dde29a46-a3d5-4dec-963b-1304b1c85e1f', site_name: siteName, status: 'delivered', site_url: `https://${siteName}.netlify.app` }] }
+    if (url === `https://${siteName}.netlify.app`) return { ok: true, status: 200, headers: { get: () => 'text/html; charset=utf-8' } }
+    if (url.includes(`/checkout/sessions/${sessionId}`)) return { ok: true, status: 200, json: async () => checkout }
+    if (url.endsWith('/rpc/wm_claim_one_time_email_recovery')) {
+      const body = JSON.parse(options.body)
+      assert.equal(body.p_order_id, orderId)
+      assert.equal(body.p_owner_id, ownerId)
+      assert.equal(body.p_recipient, 'billygeez888@gmail.com')
+      if (recoveryClaimed) return { ok: true, status: 200, json: async () => ({ shouldSend: false, status: 'recovery_already_claimed' }) }
+      recoveryClaimed = true
+      return { ok: true, status: 200, json: async () => ({ shouldSend: true, status: 'pending', attemptId: 'attempt-recovery-1' }) }
+    }
+    if (url === 'https://api.resend.com/emails') return { ok: true, status: 200, json: async () => ({ id: 'recovery_message_123' }) }
+    if (url.endsWith('/rpc/wm_finish_one_time_email_recovery')) {
+      const body = JSON.parse(options.body)
+      assert.equal(body.p_outcome, 'accepted')
+      assert.equal(body.p_provider_message_id, 'recovery_message_123')
+      return { ok: true, status: 200, json: async () => true }
+    }
+    throw new Error(`Unexpected request ${url}`)
+  } })
+  const event = (body) => ({ httpMethod: 'POST', body: JSON.stringify(body), headers: { authorization: `Bearer ${accessToken}` } })
+
+  const preparedResponse = await handler(event({ phase: 'prepare', orderId }))
+  assert.equal(preparedResponse.statusCode, 200)
+  const prepared = JSON.parse(preparedResponse.body)
+  assert.equal(prepared.recipient, 'billygeez888@gmail.com')
+  assert.equal(prepared.websiteUrl, `https://${siteName}.netlify.app`)
+  assert.doesNotMatch(preparedResponse.body, /synthetic-resend-key|synthetic-test-payment-rpc-secret/)
+
+  calls.length = 0
+  const sentResponse = await handler(event({ phase: 'send', orderId, confirmationToken: prepared.confirmationToken }))
+  assert.equal(sentResponse.statusCode, 200, sentResponse.body)
+  assert.deepEqual(JSON.parse(sentResponse.body), { status: 'accepted', recipient: 'billygeez888@gmail.com', websiteUrl: `https://${siteName}.netlify.app`, messageId: 'recovery_message_123' })
+  const sendIndex = calls.findIndex((call) => call.url === 'https://api.resend.com/emails')
+  const claimIndex = calls.findIndex((call) => call.url.endsWith('/rpc/wm_claim_one_time_email_recovery'))
+  const finishIndex = calls.findIndex((call) => call.url.endsWith('/rpc/wm_finish_one_time_email_recovery'))
+  assert.ok(claimIndex < sendIndex && sendIndex < finishIndex)
+  const resendRequest = calls[sendIndex]
+  assert.equal(resendRequest.options.headers.authorization, 'Bearer synthetic-resend-key')
+  assert.equal(resendRequest.options.headers['idempotency-key'], `wm-delivery-${orderId}`)
+  assert.match(resendRequest.options.body, /https:\/\//)
+
+  calls.length = 0
+  const duplicateResponse = await handler(event({ phase: 'send', orderId, confirmationToken: prepared.confirmationToken }))
+  assert.equal(duplicateResponse.statusCode, 409)
+  assert.equal(calls.some((call) => call.url === 'https://api.resend.com/emails'), false)
+})
+
+test('recovery requires order-owner authentication and records ambiguous Resend response without retry', async () => {
+  const orderId = '38bdba88-0905-4045-8f46-0c83d349adfb'
+  const projectId = '71fa380e-9595-4641-ac72-b247899ecab8'
+  const ownerId = '8523dde0-5e1e-4753-9dc2-abc4dc531e12'
+  const accessToken = `eyJ${'r'.repeat(120)}`
+  const siteName = `wm-${projectId.replace(/-/g, '')}`
+  const sessionId = 'cs_test_recovery_12345678'
+  const calls = []
+  const env = {
+    WM_RUNTIME_ENV: 'staging', WM_STAGING_PUBLIC_URL: 'https://bendarus.netlify.app', WM_STAGING_SUPABASE_URL: supabase,
+    WM_STAGING_SUPABASE_PUBLISHABLE_KEY: 'publishable-test-key', STRIPE_SECRET_KEY: 'sk_test_synthetic',
+    STRIPE_WEBHOOK_SECRET: 'whsec_synthetic', STRIPE_PRICE_ID: 'price_test_fixture_website_machine_99',
+    WM_STAGING_PAYMENT_RPC_SECRET: 'synthetic-test-payment-rpc-secret-0123456789', WM_STAGING_NETLIFY_CUSTOMER_TOKEN: 'token',
+    WM_STAGING_NETLIFY_ACCOUNT_SLUG: 'website-machine', WM_STAGING_EMAIL_API_KEY: 'synthetic-resend-key',
+    WM_STAGING_DELIVERY_FROM_EMAIL: 'websites@mail.ai-receptionist.work',
+  }
+  const checkout = {
+    id: sessionId, object: 'checkout.session', livemode: false, status: 'complete', payment_status: 'paid', mode: 'payment',
+    currency: 'gbp', amount_total: 9900, client_reference_id: orderId, customer_details: { email: 'billygeez888@gmail.com' },
+    metadata: { wm_order_id: orderId, wm_project_id: projectId, wm_owner_id: ownerId },
+    line_items: { data: [{ quantity: 1, amount_total: 9900, price: { id: 'price_test_fixture_website_machine_99', recurring: null } }] },
+  }
+  const handler = createWebsiteMachineEmailRecoveryHandler({ env, fetchImpl: async (url, options = {}) => {
+    calls.push(url)
+    if (url.endsWith('/auth/v1/user')) return { ok: true, status: 200, json: async () => ({ id: ownerId }) }
+    if (url.endsWith('/rpc/wm_get_payment_order')) return { ok: true, status: 200, json: async () => ({ id: orderId, mode: 'test', status: 'delivering', ownerId, projectId, amountTotal: 9900, currency: 'gbp', setupPriceId: 'price_test_fixture_website_machine_99', checkoutSessionId: sessionId, content: { businessName: 'Northstar Motor Works' } }) }
+    if (url.includes('/rest/v1/wm_customer_sites?')) return { ok: true, status: 200, json: async () => [{ site_id: 'dde29a46-a3d5-4dec-963b-1304b1c85e1f', site_name: siteName, status: 'delivered', site_url: `https://${siteName}.netlify.app` }] }
+    if (url === `https://${siteName}.netlify.app`) return { ok: true, status: 200, headers: { get: () => 'text/html' } }
+    if (url.includes(`/checkout/sessions/${sessionId}`)) return { ok: true, status: 200, json: async () => checkout }
+    if (url.endsWith('/rpc/wm_claim_one_time_email_recovery')) return { ok: true, status: 200, json: async () => ({ shouldSend: true, status: 'pending', attemptId: 'attempt-recovery-2' }) }
+    if (url === 'https://api.resend.com/emails') throw Object.assign(new Error('network timeout'), { deliveryOutcome: 'unknown', code: 'RESEND_OUTCOME_UNKNOWN' })
+    if (url.endsWith('/rpc/wm_finish_one_time_email_recovery')) {
+      const body = JSON.parse(options.body)
+      assert.equal(body.p_outcome, 'unknown')
+      assert.equal(body.p_error_code, 'RESEND_OUTCOME_UNKNOWN')
+      return { ok: true, status: 200, json: async () => true }
+    }
+    throw new Error(`Unexpected request ${url}`)
+  } })
+  const event = (body, headers = { authorization: `Bearer ${accessToken}` }) => ({ httpMethod: 'POST', body: JSON.stringify(body), headers })
+  assert.equal((await handler(event({ phase: 'prepare', orderId }, {}))).statusCode, 401)
+  const prepared = JSON.parse((await handler(event({ phase: 'prepare', orderId })).then((response) => response.body)))
+  const result = await handler(event({ phase: 'send', orderId, confirmationToken: prepared.confirmationToken }))
+  assert.equal(result.statusCode, 502)
+  assert.match(result.body, /No automatic retry/)
+  assert.equal(calls.filter((url) => url === 'https://api.resend.com/emails').length, 1)
+  assert.equal(calls.filter((url) => url.endsWith('/rpc/wm_finish_one_time_email_recovery')).length, 1)
 })
