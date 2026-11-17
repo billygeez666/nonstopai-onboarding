@@ -3,6 +3,11 @@
   publish = "dist"
   functions = "netlify/functions"
 
+# Stripe price IDs are public identifiers, not secrets. The verified live price is
+# intentionally referenced in source, tests, and migrations for fail-closed checks.
+[build.environment]
+  SECRETS_SCAN_OMIT_KEYS = "STRIPE_PRICE_ID,WM_PRODUCTION_STRIPE_PRICE_ID"
+
 [functions]
   node_bundler = "esbuild"
 

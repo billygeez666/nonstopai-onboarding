@@ -39,7 +39,7 @@ The migration expects Vault secrets named `wm_payment_rpc_secret_staging` and `w
 
 Selected existing live Website Machine Starter price:
 
-- `price_1TtvtIEWP0eV3FnnXUMIwPwG` — £99 GBP, one-time. The matching Supabase offer stays inactive until explicit launch approval.
+- `<STRIPE_PRICE_ID>` — £99 GBP, one-time. The matching Supabase offer stays inactive until explicit launch approval.
 - No recurring price is part of this launch.
 
 Use the dedicated **test-mode** staging webhook endpoint at
