@@ -464,10 +464,17 @@ export function createWebsiteMachineStripeWebhookHandler({ env = process.env, fe
     persistSite: async ({ projectId, ownerId, siteId, siteName, customDomain }) => {
       const mode = config.liveMode ? 'live' : 'test'
       const message = [mode, projectId, ownerId, siteId, siteName, customDomain || ''].join('\n')
-      await rpc('wm_reserve_customer_site', {
-        p_project_id: projectId, p_owner_id: ownerId, p_mode: mode, p_site_id: siteId, p_site_name: siteName,
-        p_custom_domain: customDomain || null, p_signature: signature(message, config.rpcSecret),
-      })
+      try {
+        await rpc('wm_reserve_customer_site', {
+          p_project_id: projectId, p_owner_id: ownerId, p_mode: mode, p_site_id: siteId, p_site_name: siteName,
+          p_custom_domain: customDomain || null, p_signature: signature(message, config.rpcSecret),
+        })
+      } catch (error) {
+        if (error && typeof error === 'object') {
+          try { if (!error.websiteMachineOperation) error.websiteMachineOperation = 'supabase_reserve_customer_site' } catch {}
+        }
+        throw error
+      }
     },
   })
 

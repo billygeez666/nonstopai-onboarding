@@ -56,6 +56,20 @@ test('unpaid projects cannot create a Netlify site', async () => {
   assert.equal(calls, 0)
 })
 
+test('Netlify publisher errors carry a bounded operation label for webhook diagnostics', async () => {
+  const publisher = createNetlifyCustomerPublisher({
+    env,
+    fetchImpl: async () => { throw new TypeError('private provider response: netlify-test-only-token') },
+    persistSite: async () => {},
+  })
+
+  await assert.rejects(publisher.publishPaidProject({ paid: true, projectId, ownerId, content }), (error) => {
+    assert.equal(error.name, 'TypeError')
+    assert.equal(error.websiteMachineOperation, 'netlify_account_lookup')
+    return true
+  })
+})
+
 test('site creation requires durable association and records a new isolated site before deploying', async () => {
   const calls = []
   const persisted = []

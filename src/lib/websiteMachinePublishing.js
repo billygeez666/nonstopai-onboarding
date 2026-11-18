@@ -7,6 +7,26 @@ import { renderStaticWebsite, sanitizeWebsiteContent } from './websiteMachine.js
 const NETLIFY_API = 'https://api.netlify.com/api/v1'
 const DOMAIN_PROOF_LABEL = '_nonstopai-verify'
 
+function attachSafeOperation(error, operation) {
+  if (error && typeof error === 'object') {
+    try {
+      if (!error.websiteMachineOperation) error.websiteMachineOperation = operation
+    } catch {}
+  }
+  return error
+}
+
+function netlifyApiOperation(path, method = 'GET') {
+  const route = String(path).split('?')[0]
+  if (/^\/accounts\/[^/]+$/.test(route)) return 'netlify_account_lookup'
+  if (/^\/[^/]+\/sites\/$/.test(route) && method === 'POST') return 'netlify_site_create'
+  if (/^\/sites\/[^/]+\/metadata$/.test(route)) return method === 'PUT' ? 'netlify_site_metadata_bind' : 'netlify_site_metadata_verify'
+  if (/^\/sites\/[^/]+$/.test(route) && method === 'PUT') return 'netlify_deploy_upload'
+  if (/^\/sites\/[^/]+$/.test(route)) return 'netlify_site_lookup'
+  if (/^\/deploys\/[^/]+$/.test(route)) return 'netlify_deploy_poll'
+  return 'netlify_api_request'
+}
+
 export function normalizeCustomerDomain(value) {
   if (typeof value !== 'string' || value.length > 253) return null
   const input = value.trim().toLowerCase().replace(/\.$/, '')
@@ -115,26 +135,35 @@ export function createNetlifyCustomerPublisher({
 
   async function api(path, options = {}) {
     if (!env.WM_NETLIFY_CUSTOMER_TOKEN) throw new Error('Customer site publishing is not configured.')
-    const response = await fetchImpl(`${NETLIFY_API}${path}`, {
-      ...options,
-      headers: { authorization: `Bearer ${env.WM_NETLIFY_CUSTOMER_TOKEN}`, ...options.headers },
-    })
-    return jsonResponse(response)
+    const operation = netlifyApiOperation(path, options.method || 'GET')
+    try {
+      const response = await fetchImpl(`${NETLIFY_API}${path}`, {
+        ...options,
+        headers: { authorization: `Bearer ${env.WM_NETLIFY_CUSTOMER_TOKEN}`, ...options.headers },
+      })
+      return await jsonResponse(response)
+    } catch (error) {
+      throw attachSafeOperation(error, operation)
+    }
   }
 
   async function getPublisherAccountId() {
     const account = await api(`/accounts/${encodeURIComponent(accountSlug)}`)
-    if (typeof account?.id !== 'string' || !account.id) throw new Error('Dedicated Netlify Website Machine account could not be verified.')
+    if (typeof account?.id !== 'string' || !account.id) {
+      throw attachSafeOperation(new Error('Dedicated Netlify Website Machine account could not be verified.'), 'netlify_account_lookup')
+    }
     return account.id
   }
 
   async function verifySiteBinding(site, projectId, siteName, customDomain, accountId) {
     if (!site?.id || site.account_id !== accountId || site.name !== siteName || !isNetlifyHttpsUrl(site.ssl_url || site.url || '') ||
         (customDomain && normalizeCustomerDomain(site.custom_domain || '') !== customDomain)) {
-      throw new Error('Netlify did not return the isolated Website Machine site.')
+      throw attachSafeOperation(new Error('Netlify did not return the isolated Website Machine site.'), 'netlify_site_binding_verify')
     }
     const metadata = await api(`/sites/${encodeURIComponent(site.id)}/metadata`)
-    if (metadata?.website_machine_project_id !== projectId) throw new Error('Netlify site is not bound to this Website Machine project.')
+    if (metadata?.website_machine_project_id !== projectId) {
+      throw attachSafeOperation(new Error('Netlify site is not bound to this Website Machine project.'), 'netlify_site_binding_verify')
+    }
     return site
   }
 
@@ -158,9 +187,14 @@ export function createNetlifyCustomerPublisher({
         if (domainChallenge?.domain !== customDomain || !await verifyDomainChallenge({ domain: customDomain, token: domainChallenge.token, resolveTxt })) {
           throw new Error('Add the requested DNS TXT ownership record before publishing to this domain.')
         }
-        const existing = await fetchImpl(`${NETLIFY_API}/sites/${encodeURIComponent(customDomain)}`, {
-          headers: { authorization: `Bearer ${env.WM_NETLIFY_CUSTOMER_TOKEN}` },
-        })
+        let existing
+        try {
+          existing = await fetchImpl(`${NETLIFY_API}/sites/${encodeURIComponent(customDomain)}`, {
+            headers: { authorization: `Bearer ${env.WM_NETLIFY_CUSTOMER_TOKEN}` },
+          })
+        } catch (error) {
+          throw attachSafeOperation(error, 'netlify_domain_assignment_check')
+        }
         if (existing.status !== 404) throw new Error('This domain is already assigned to a Netlify site or could not be safely checked.')
       }
 
@@ -169,7 +203,9 @@ export function createNetlifyCustomerPublisher({
       let site
       if (siteRecord) {
         site = await api(`/sites/${encodeURIComponent(siteRecord.siteId)}`)
-        if (site.id !== siteRecord.siteId) throw new Error('Stored customer site could not be verified.')
+        if (site.id !== siteRecord.siteId) {
+          throw attachSafeOperation(new Error('Stored customer site could not be verified.'), 'netlify_site_binding_verify')
+        }
         await verifySiteBinding(site, projectId, siteName, customDomain, accountId)
       } else {
         try {
@@ -180,7 +216,7 @@ export function createNetlifyCustomerPublisher({
           })
           if (!site?.id || site.account_id !== accountId || site.name !== siteName || !isNetlifyHttpsUrl(site.ssl_url || site.url || '') ||
               (customDomain && normalizeCustomerDomain(site.custom_domain || '') !== customDomain)) {
-            throw new Error('Netlify did not return the isolated Website Machine site.')
+            throw attachSafeOperation(new Error('Netlify did not return the isolated Website Machine site.'), 'netlify_site_binding_verify')
           }
           await api(`/sites/${encodeURIComponent(site.id)}/metadata`, {
             method: 'PUT', headers: { 'content-type': 'application/json' },
@@ -200,6 +236,7 @@ export function createNetlifyCustomerPublisher({
           const error = new Error('Customer deploy is not ready for the isolated Website Machine site.')
           error.code = 'CUSTOMER_DEPLOY_NOT_READY'
           error.stage = 'netlify_deploy_verify'
+          error.websiteMachineOperation = 'netlify_deploy_verify'
           throw error
         }
         const verifyUrl = deploy.deploy_ssl_url || deploy.ssl_url
@@ -207,9 +244,15 @@ export function createNetlifyCustomerPublisher({
           const error = new Error('Customer deploy has no secure Netlify verification URL.')
           error.code = 'CUSTOMER_DEPLOY_URL_INVALID'
           error.stage = 'netlify_deploy_verify'
+          error.websiteMachineOperation = 'netlify_deploy_verify'
           throw error
         }
-        const live = await fetchImpl(verifyUrl, { redirect: 'error' })
+        let live
+        try {
+          live = await fetchImpl(verifyUrl, { redirect: 'error' })
+        } catch (error) {
+          throw attachSafeOperation(error, 'netlify_public_site_verify')
+        }
         if (!live.ok) {
           const error = new Error(live.status === 401 || live.status === 403
             ? `Customer site is access-restricted (HTTP ${live.status}).`
@@ -217,6 +260,7 @@ export function createNetlifyCustomerPublisher({
           error.code = live.status === 401 || live.status === 403 ? 'CUSTOMER_SITE_ACCESS_RESTRICTED' : 'CUSTOMER_DEPLOY_HTTP_ERROR'
           error.status = live.status
           error.stage = 'netlify_public_verify'
+          error.websiteMachineOperation = 'netlify_public_site_verify'
           throw error
         }
         const contentType = live.headers?.get('content-type') || ''
@@ -225,6 +269,7 @@ export function createNetlifyCustomerPublisher({
           error.code = 'CUSTOMER_DEPLOY_MIME_TYPE_INVALID'
           error.status = live.status
           error.stage = 'netlify_public_verify'
+          error.websiteMachineOperation = 'netlify_public_site_verify'
           throw error
         }
         const liveHtml = await live.text()
@@ -233,6 +278,7 @@ export function createNetlifyCustomerPublisher({
           error.code = 'CUSTOMER_DEPLOY_CONTENT_MISMATCH'
           error.status = live.status
           error.stage = 'netlify_public_verify'
+          error.websiteMachineOperation = 'netlify_public_site_verify'
           throw error
         }
         return verifyUrl
@@ -262,8 +308,8 @@ export function createNetlifyCustomerPublisher({
         headers: { 'content-type': 'application/zip' },
         body: makeStaticWebsiteZip(html),
       })
-      if (!upload?.id) throw new Error('Netlify did not start a customer deploy.')
-      if (upload.site_id !== site.id) throw new Error('Netlify returned a deploy for a different site.')
+      if (!upload?.id) throw attachSafeOperation(new Error('Netlify did not start a customer deploy.'), 'netlify_deploy_upload')
+      if (upload.site_id !== site.id) throw attachSafeOperation(new Error('Netlify returned a deploy for a different site.'), 'netlify_deploy_upload')
       let deploy = upload
       for (let attempt = 0; attempt < maxPolls && !['ready', 'error'].includes(deploy.state); attempt += 1) {
         await sleep(1000)

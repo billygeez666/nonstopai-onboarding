@@ -36,6 +36,25 @@ function validatePrice(price, { id, amount, liveMode = false }) {
     typeof price.product === 'object' && price.product.active === true && isWebsiteMachine && !/receptionist/i.test(price.product.name || '')
 }
 
+function safeLogValue(value, pattern) {
+  return typeof value === 'string' && pattern.test(value) ? value : undefined
+}
+
+function safeErrorType(error) {
+  const candidate = error && typeof error === 'object' ? error.name || error.constructor?.name : ''
+  return typeof candidate === 'string' && /^[A-Za-z][A-Za-z0-9_]{0,63}$/.test(candidate)
+    ? candidate
+    : 'NonErrorThrow'
+}
+
+function stageForOperation(operation) {
+  if (operation.startsWith('supabase_')) return 'supabase'
+  if (operation.startsWith('stripe_')) return 'stripe_verification'
+  if (operation.startsWith('netlify_')) return 'netlify_publish'
+  if (operation.startsWith('resend_')) return 'resend_email'
+  return 'fulfillment'
+}
+
 export function createWebsiteMachineCheckoutApi({
   env = process.env,
   fetchImpl = fetch,
@@ -176,26 +195,43 @@ export function createStripeWebsiteMachineWebhook({
     if (!keyMatchesMode || !env.WM_STRIPE_WEBHOOK_SECRET || typeof loadOrder !== 'function' || typeof confirmPaidOrder !== 'function' || !publisher || typeof recordDeployment !== 'function' || typeof claimDeliveryEmail !== 'function' || typeof finishDeliveryEmail !== 'function' || typeof sendDeliveryEmail !== 'function') {
       return { statusCode: 503, body: 'Website Machine payment fulfillment is not configured.' }
     }
+    let operation = 'webhook_validation'
+    let stripeEvent
+    let orderId
+    const runOperation = async (name, action) => {
+      operation = name
+      try {
+        return await action()
+      } catch (error) {
+        if (error && typeof error === 'object') {
+          try {
+            if (!error.websiteMachineOperation) error.websiteMachineOperation = name
+          } catch {}
+        }
+        throw error
+      }
+    }
+
     try {
       const rawBody = event.isBase64Encoded ? Buffer.from(event.body || '', 'base64') : Buffer.from(event.body || '', 'utf8')
       if (rawBody.length > 1_000_000) return { statusCode: 413, body: 'Stripe webhook is too large.' }
       const signature = event.headers?.['stripe-signature'] || event.headers?.['Stripe-Signature'] || ''
-      const stripeEvent = verifyStripeWebhookSignature(rawBody, signature, env.WM_STRIPE_WEBHOOK_SECRET, now())
+      stripeEvent = verifyStripeWebhookSignature(rawBody, signature, env.WM_STRIPE_WEBHOOK_SECRET, now())
       if (!stripeEvent?.id || stripeEvent.livemode !== (env.WM_STRIPE_LIVEMODE === 'true')) return { statusCode: 400, body: 'Invalid Stripe webhook.' }
       if (!['checkout.session.completed', 'checkout.session.async_payment_succeeded'].includes(stripeEvent.type)) return { statusCode: 200, body: 'Ignored event.' }
 
       const notice = stripeEvent.data?.object
-      const orderId = notice?.metadata?.wm_order_id
+      orderId = notice?.metadata?.wm_order_id
       if (!/^[0-9a-f-]{36}$/i.test(orderId || '')) return { statusCode: 200, body: 'Not a Website Machine order.' }
-      const order = await loadOrder({ orderId, mode: stripeEvent.livemode ? 'live' : 'test' })
+      const order = await runOperation('supabase_load_payment_order', () => loadOrder({ orderId, mode: stripeEvent.livemode ? 'live' : 'test' }))
       const mode = liveMode ? 'live' : 'test'
       if (!order || order.id !== orderId || !order.projectId || !order.ownerId || !order.setupPriceId || order.mode !== mode) return { statusCode: 404, body: 'Order not found.' }
 
-      const stripeResponse = await fetchImpl(`${API}/checkout/sessions/${encodeURIComponent(notice.id)}?expand%5B%5D=line_items.data.price`, {
+      const stripeResponse = await runOperation('stripe_retrieve_checkout_session', () => fetchImpl(`${API}/checkout/sessions/${encodeURIComponent(notice.id)}?expand%5B%5D=line_items.data.price`, {
         headers: { authorization: `Bearer ${env.WM_STRIPE_SECRET_KEY}` },
-      })
+      }))
       if (!stripeResponse.ok) return { statusCode: 502, body: 'Stripe session verification failed.' }
-      const session = await stripeResponse.json()
+      const session = await runOperation('stripe_parse_checkout_session', () => stripeResponse.json())
       if (session.id !== notice.id || session.client_reference_id !== orderId || !isPaidWebsiteMachineSession(session, {
         orderId, projectId: order.projectId, ownerId: order.ownerId,
         setupPriceId: order.setupPriceId, liveMode,
@@ -206,21 +242,21 @@ export function createStripeWebsiteMachineWebhook({
         return { statusCode: 400, body: 'Payment does not match the Website Machine order.' }
       }
 
-      const confirmed = await confirmPaidOrder({ eventId: stripeEvent.id, session, order })
+      const confirmed = await runOperation('supabase_confirm_paid_order', () => confirmPaidOrder({ eventId: stripeEvent.id, session, order }))
       if (confirmed?.paid !== true) return { statusCode: 409, body: 'Paid order confirmation was not recorded.' }
       const deliverEmail = async (siteUrl) => {
         const recipient = session.customer_details?.email || session.customer_email
         if (!siteUrl || !recipient) throw new Error('Verified website or Checkout email is unavailable.')
-        const claim = await claimDeliveryEmail({ orderId: order.id, mode: order.mode })
+        const claim = await runOperation('supabase_claim_delivery_email', () => claimDeliveryEmail({ orderId: order.id, mode: order.mode }))
         if (claim?.status === 'accepted') return 'accepted'
         if (claim?.shouldSend !== true || !claim.attemptId) return claim?.status || 'unknown'
         try {
-          const result = await sendDeliveryEmail({ to: recipient, businessName: order.content?.businessName || 'Your business', deliveryUrl: siteUrl, orderId: order.id })
-          await finishDeliveryEmail({ orderId: order.id, mode: order.mode, attemptId: claim.attemptId, outcome: 'accepted', messageId: result?.messageId || null })
+          const result = await runOperation('resend_send_delivery_email', () => sendDeliveryEmail({ to: recipient, businessName: order.content?.businessName || 'Your business', deliveryUrl: siteUrl, orderId: order.id }))
+          await runOperation('supabase_record_email_acceptance', () => finishDeliveryEmail({ orderId: order.id, mode: order.mode, attemptId: claim.attemptId, outcome: 'accepted', messageId: result?.messageId || null }))
           return 'accepted'
         } catch (error) {
           const outcome = error?.deliveryOutcome === 'failed' ? 'failed' : 'unknown'
-          await finishDeliveryEmail({ orderId: order.id, mode: order.mode, attemptId: claim.attemptId, outcome, errorCode: error?.code || 'DELIVERY_EMAIL_FAILED' })
+          await runOperation(`supabase_record_email_${outcome}`, () => finishDeliveryEmail({ orderId: order.id, mode: order.mode, attemptId: claim.attemptId, outcome, errorCode: error?.code || 'DELIVERY_EMAIL_FAILED' }))
           if (outcome === 'failed') throw error
           return 'unknown'
         }
@@ -232,7 +268,7 @@ export function createStripeWebsiteMachineWebhook({
         if (status === 'pending') return { statusCode: 200, body: 'Website is published; email delivery is already in progress.' }
         return { statusCode: 200, body: 'Website is published and delivery email is accepted.' }
       }
-      const site = await publisher.publishPaidProject({
+      const site = await runOperation('netlify_publish_paid_project', () => publisher.publishPaidProject({
         paid: true,
         projectId: order.projectId,
         ownerId: order.ownerId,
@@ -240,8 +276,8 @@ export function createStripeWebsiteMachineWebhook({
         domain: order.domain || undefined,
         domainChallenge: order.domainChallenge,
         siteRecord: confirmed.siteRecord || order.siteRecord || null,
-      })
-      await recordDeployment({ eventId: stripeEvent.id, order, site })
+      }))
+      await runOperation('supabase_record_customer_deployment', () => recordDeployment({ eventId: stripeEvent.id, order, site }))
       const status = await deliverEmail(site.url)
       if (status === 'unknown') return { statusCode: 200, body: 'Website is published; email outcome requires reconciliation.' }
       if (status === 'pending') return { statusCode: 200, body: 'Website is published; email delivery is already in progress.' }
@@ -249,8 +285,30 @@ export function createStripeWebsiteMachineWebhook({
     } catch (error) {
       const code = typeof error?.code === 'string' && /^[A-Z0-9_]{1,80}$/.test(error.code) ? error.code : 'FULFILLMENT_FAILED'
       const stage = typeof error?.stage === 'string' && /^[a-z0-9_]{1,80}$/.test(error.stage) ? error.stage : 'fulfillment'
-      const status = Number.isInteger(error?.status) && error.status >= 100 && error.status <= 599 ? error.status : undefined
-      logger.error?.('website_machine_fulfillment_failed', { stage, code, ...(status ? { status } : {}) })
+      const statusValue = Number.isInteger(error?.status) ? error.status : error?.statusCode
+      const status = Number.isInteger(statusValue) && statusValue >= 100 && statusValue <= 599 ? statusValue : undefined
+      const databaseCode = safeLogValue(error?.databaseCode, /^[A-Z0-9]{5}$/)
+      const operationName = safeLogValue(error?.websiteMachineOperation, /^[a-z0-9_]{1,80}$/) || operation
+      const effectiveStage = stage === 'fulfillment' ? stageForOperation(operationName) : stage
+      const requestId = safeLogValue(
+        event.headers?.['x-nf-request-id'] || event.headers?.['X-Nf-Request-Id'] || event.headers?.['x-netlify-request-id'],
+        /^[A-Za-z0-9_-]{6,80}$/,
+      )
+      const eventId = safeLogValue(stripeEvent?.id, /^evt_[A-Za-z0-9_]{8,120}$/)
+      const safeOrderId = safeLogValue(orderId, /^[0-9a-f-]{36}$/i)
+      try {
+        logger.error?.('website_machine_fulfillment_failed', {
+          stage: effectiveStage,
+          operation: operationName,
+          errorType: safeErrorType(error),
+          code,
+          ...(status ? { status } : {}),
+          ...(databaseCode ? { databaseCode } : {}),
+          ...(requestId ? { requestId } : {}),
+          ...(eventId ? { stripeEventId: eventId } : {}),
+          ...(safeOrderId ? { orderId: safeOrderId } : {}),
+        })
+      } catch {}
       return { statusCode: 500, body: 'Payment fulfillment failed and can be safely retried.' }
     }
   }

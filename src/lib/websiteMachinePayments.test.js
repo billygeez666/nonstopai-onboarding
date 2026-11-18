@@ -411,17 +411,19 @@ test('failed asynchronous payment is acknowledged without order confirmation, pu
 test('webhook retry recovers after a temporary publisher failure without premature email', async () => {
   const event = { id: 'evt_test_recover_1234', object: 'event', type: 'checkout.session.completed', livemode: false, data: { object: { id: baseSession.id, metadata: baseSession.metadata } } }
   const signed = signedEvent(event)
+  const logs = []
   let deployAttempts = 0
   let sentEmails = 0
   let records = 0
   const handler = createStripeWebsiteMachineWebhook({
     env: { WM_STRIPE_SECRET_KEY: apiKey, WM_STRIPE_WEBHOOK_SECRET: secret },
     now: () => now,
+    logger: { error: (...args) => logs.push(args) },
     loadOrder: async () => ({ id: orderId, projectId, ownerId, setupPriceId, mode: 'test', content: { businessName: 'Northstar' } }),
     confirmPaidOrder: async () => ({ paid: true, delivered: false }),
     publisher: { publishPaidProject: async () => {
       deployAttempts += 1
-      if (deployAttempts === 1) throw new Error('temporary Netlify failure')
+      if (deployAttempts === 1) throw new Error('temporary Netlify failure for synthetic@example.test; sk_test_synthetic_not_a_credential')
       return { url: 'https://northstar.netlify.app', deployId: '0123456789abcdef' }
     } },
     recordDeployment: async () => { records += 1 },
@@ -429,13 +431,47 @@ test('webhook retry recovers after a temporary publisher failure without prematu
     ...emailState(),
     fetchImpl: async () => ({ ok: true, json: async () => baseSession }),
   })
-  const request = { httpMethod: 'POST', body: signed.raw.toString(), headers: { 'stripe-signature': signed.signature } }
-  assert.equal((await handler(request)).statusCode, 500)
+  const firstRequest = { httpMethod: 'POST', body: signed.raw.toString(), headers: { 'stripe-signature': signed.signature, 'x-nf-request-id': '646cf447' } }
+  const retryRequest = { ...firstRequest, headers: { ...firstRequest.headers, 'x-nf-request-id': '646cf448' } }
+  assert.equal((await handler(firstRequest)).statusCode, 500)
+  assert.deepEqual(logs, [['website_machine_fulfillment_failed', {
+    stage: 'netlify_publish', operation: 'netlify_publish_paid_project', errorType: 'Error', code: 'FULFILLMENT_FAILED',
+    requestId: '646cf447', stripeEventId: event.id, orderId,
+  }]])
+  assert.doesNotMatch(JSON.stringify(logs), /temporary Netlify failure|synthetic@example\.test|sk_test_synthetic/)
   assert.equal(sentEmails, 0)
-  assert.equal((await handler(request)).statusCode, 200)
+  assert.equal((await handler(retryRequest)).statusCode, 200)
+  assert.equal(logs.length, 1, 'successful retry does not emit a failure log')
   assert.equal(deployAttempts, 2)
   assert.equal(records, 1)
   assert.equal(sentEmails, 1)
+})
+
+test('webhook reports a Supabase operation and SQLSTATE without logging the database error message', async () => {
+  const event = { id: 'evt_test_rpc_error_1234', object: 'event', type: 'checkout.session.completed', livemode: false, data: { object: { id: baseSession.id, metadata: baseSession.metadata } } }
+  const signed = signedEvent(event)
+  const logs = []
+  const handler = createStripeWebsiteMachineWebhook({
+    env: { WM_STRIPE_SECRET_KEY: apiKey, WM_STRIPE_WEBHOOK_SECRET: secret },
+    now: () => now,
+    logger: { error: (...args) => logs.push(args) },
+    loadOrder: async () => ({ id: orderId, projectId, ownerId, setupPriceId, mode: 'test', content: { businessName: 'Northstar' } }),
+    confirmPaidOrder: async () => { const error = new Error('private database detail for synthetic@example.test'); error.databaseCode = '40001'; throw error },
+    publisher: { publishPaidProject: async () => { throw new Error('publisher must not run') } },
+    recordDeployment: async () => {},
+    sendDeliveryEmail: async () => {},
+    ...emailState(),
+    fetchImpl: async () => ({ ok: true, json: async () => baseSession }),
+  })
+
+  const response = await handler({ httpMethod: 'POST', body: signed.raw.toString(), headers: { 'stripe-signature': signed.signature, 'x-nf-request-id': 'rpcfail01' } })
+
+  assert.equal(response.statusCode, 500)
+  assert.deepEqual(logs, [['website_machine_fulfillment_failed', {
+    stage: 'supabase', operation: 'supabase_confirm_paid_order', errorType: 'Error', code: 'FULFILLMENT_FAILED',
+    databaseCode: '40001', requestId: 'rpcfail01', stripeEventId: event.id, orderId,
+  }]])
+  assert.doesNotMatch(JSON.stringify(logs), /private database detail|synthetic@example\.test/)
 })
 
 test('a Netlify access restriction is logged safely and cannot record delivery or send email', async () => {
@@ -450,7 +486,7 @@ test('a Netlify access restriction is logged safely and cannot record delivery o
     logger: { error: (...args) => logs.push(args) },
     loadOrder: async () => ({ id: orderId, projectId, ownerId, setupPriceId, mode: 'test', content: { businessName: 'Northstar' } }),
     confirmPaidOrder: async () => ({ paid: true, delivered: false }),
-    publisher: { publishPaidProject: async () => { const error = new Error('private'); error.code = 'CUSTOMER_SITE_ACCESS_RESTRICTED'; error.stage = 'netlify_public_verify'; error.status = 401; throw error } },
+    publisher: { publishPaidProject: async () => { const error = new Error('private'); error.code = 'CUSTOMER_SITE_ACCESS_RESTRICTED'; error.stage = 'netlify_public_verify'; error.status = 401; error.websiteMachineOperation = 'netlify_public_site_verify'; throw error } },
     recordDeployment: async () => { recorded += 1 },
     sendDeliveryEmail: async () => { emailed += 1 },
     ...emailState(),
@@ -462,7 +498,10 @@ test('a Netlify access restriction is logged safely and cannot record delivery o
   assert.equal(response.statusCode, 500)
   assert.equal(recorded, 0)
   assert.equal(emailed, 0)
-  assert.deepEqual(logs, [['website_machine_fulfillment_failed', { stage: 'netlify_public_verify', code: 'CUSTOMER_SITE_ACCESS_RESTRICTED', status: 401 }]])
+  assert.deepEqual(logs, [['website_machine_fulfillment_failed', {
+    stage: 'netlify_public_verify', operation: 'netlify_public_site_verify', errorType: 'Error',
+    code: 'CUSTOMER_SITE_ACCESS_RESTRICTED', status: 401, stripeEventId: event.id, orderId,
+  }]])
 })
 
 test('duplicate delivered webhook reuses the existing deployment and sends one idempotent delivery email', async () => {
