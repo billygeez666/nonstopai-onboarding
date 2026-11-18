@@ -143,7 +143,7 @@ export function createNetlifyCustomerPublisher({
   persistSite,
   sleep = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds)),
   maxPolls = 20,
-  maxUploadAttempts = 3,
+  maxUploadAttempts = 2,
   uploadTimeoutMs = 8_000,
 } = {}) {
   const accountSlug = env.WM_NETLIFY_ACCOUNT_SLUG
@@ -164,6 +164,7 @@ export function createNetlifyCustomerPublisher({
       return await jsonResponse(response)
     } catch (error) {
       if (error?.name === 'TimeoutError' || error?.name === 'AbortError') error.code ||= 'NETLIFY_REQUEST_TIMEOUT'
+      else if (error?.name === 'TypeError') error.code ||= 'NETLIFY_NETWORK_ERROR'
       else if (Number.isInteger(error?.status)) error.code ||= `NETLIFY_HTTP_${error.status}`
       throw attachSafeOperation(error, operation)
     }
