@@ -173,6 +173,11 @@ export default function WebsiteMachine() {
     if (purchaseStage) purchaseHeading.current?.focus()
   }, [purchaseStage])
 
+  function restartPreview() {
+    sessionStorage.removeItem(purchaseDraftKey)
+    window.location.assign('/website-machine/')
+  }
+
   function openPurchase() {
     setPurchaseFieldsState({ ...draftBusiness, heroTitle: content.heroTitle })
     setPurchaseErrors({})
@@ -499,7 +504,7 @@ export default function WebsiteMachine() {
 
   return (
     <main className="wm-app">
-      <header className="wm-topbar"><a href="/website-machine/" className="wm-brand">Website Machine</a><nav aria-label="Page navigation"><a href="#website-examples">Examples</a><a href="#pricing">Pricing</a></nav></header>
+      <header className="wm-topbar"><a href="/website-machine/" className="wm-brand">Website Machine</a>{!draftBusiness && !conceptEntry && !paymentNotice && !emailRecoveryMode && <nav aria-label="Page navigation"><a href="#website-examples">Examples</a><a href="#pricing">Pricing</a></nav>}{draftBusiness && paymentNotice !== 'processing' && <button type="button" className="wm-review-edit" onClick={restartPreview} disabled={busy}>Start a new preview</button>}</header>
       {!draftBusiness && !conceptEntry && !paymentNotice && !emailRecoveryMode && <WebsiteMachineLanding />}
       {conceptState && <p className="wm-service-state" role="status">{conceptState}</p>}
       <div data-stage={purchaseStage} className={`wm-workspace wm-sales-builder${draftBusiness || paymentNotice === 'processing' || emailRecoveryMode ? ' wm-builder-result' : ''}`} id="create-preview">
@@ -597,9 +602,9 @@ export default function WebsiteMachine() {
             <form onSubmit={applyPurchaseDetails} noValidate>
               {purchaseFields.map(([name, label, type, limit]) => <label className="wm-field" key={name}>
                 <span>{label}</span>
-                <input name={name} type={type} maxLength={limit} value={purchaseFieldsState[name] || ''} aria-invalid={Boolean(purchaseErrors[name])}
+                <input name={name} type={type} maxLength={limit} value={purchaseFieldsState[name] || ''} aria-label={label} aria-describedby={purchaseErrors[name] ? `wm-purchase-error-${name}` : undefined} aria-invalid={Boolean(purchaseErrors[name])}
                   onChange={(event) => setPurchaseFieldsState((current) => ({ ...current, [name]: event.target.value }))} />
-                {purchaseErrors[name] && <small className="wm-error" role="alert">{purchaseErrors[name]}</small>}
+                {purchaseErrors[name] && <small id={`wm-purchase-error-${name}`} className="wm-error" role="alert">{purchaseErrors[name]}</small>}
               </label>)}
               <button className="wm-sales-primary" type="submit">Update and review my website</button>
             </form>
