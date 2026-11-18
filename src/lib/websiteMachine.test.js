@@ -120,3 +120,16 @@ test('accepts only a bounded structured website content shape for server persist
   assert.match(renderStaticWebsite({ ...content, services: ['<script>alert(1)</script>'] }), /&lt;script&gt;alert\(1\)&lt;\/script&gt;/)
   assert.equal(sanitizeWebsiteContent({ ...content, websiteUrl: 'javascript:alert(1)' }).content.websiteUrl, '')
 })
+
+test('styled websites publish customer-facing copy and safe social links', () => {
+  const profile = 'https://www.instagram.com/example_business/'
+  const result = generateWebsiteContent({ ...garage, socialUrl: profile + '?tracking=unused' })
+  const content = sanitizeWebsiteContent({ ...result.content, visualStyle: 'dark' }).content
+  const html = renderStaticWebsite(content)
+  assert.equal(content.socialUrl, profile)
+  assert.match(html, /data-style="dark"/)
+  assert.match(html, /Our services/)
+  assert.match(html, /href="https:\/\/www\.instagram\.com\/example_business\/"/)
+  assert.doesNotMatch(html, /tracking=unused|supplied as verified information/)
+  assert.equal(validateBusinessInput({ ...garage, socialUrl: 'https://instagram.com.example.org/business' }).ok, false)
+})

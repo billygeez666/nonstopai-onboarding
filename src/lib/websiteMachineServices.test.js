@@ -156,6 +156,14 @@ test('public preview serves only a valid database-matched, unexpired token as no
   assert.doesNotMatch(response.body, /<script>/)
   const invalid = await handler({ httpMethod: 'GET', rawUrl: `https://nonstopai-staging-preview.netlify.app/.netlify/functions/website-machine-render-preview?id=${project.id}&token=short` })
   assert.equal(invalid.statusCode, 404)
+  const concept = await handler({ httpMethod: 'GET', rawUrl: `https://nonstopai-staging-preview.netlify.app/.netlify/functions/website-machine-render-preview?id=${project.id}&token=${token}&format=concept` })
+  assert.match(response.body, /Get This Website — £99/)
+  assert.equal(concept.headers['cache-control'], 'no-store')
+  const shared = JSON.parse(concept.body)
+  assert.deepEqual(Object.keys(shared), ['content'])
+  assert.equal(shared.content.verifiedPhone, '')
+  assert.equal(shared.content.verifiedEmail, '')
+  assert.equal(shared.content.websiteUrl, '')
 })
 
 test('delivery returns a fixed static attachment only to the authenticated project owner', async () => {
@@ -168,4 +176,23 @@ test('delivery returns a fixed static attachment only to the authenticated proje
   assert.match(response.headers['content-disposition'], /northstar-motor-works\.html/)
   assert.match(response.headers['cache-control'], /no-store/)
   assert.doesNotMatch(response.body, /<script>/)
+})
+
+test('share links only prefill business contacts with explicit public-contact opt-in', async () => {
+  const token = 'y'.repeat(43)
+  const rawUrl = `https://nonstopai-staging-preview.netlify.app/.netlify/functions/website-machine-render-preview?id=${project.id}&token=${token}&format=concept`
+  for (const sharePublicContacts of [false, true]) {
+    const shared = {
+      ...content, sharePublicContacts, verifiedPhone: '07700 900123',
+      verifiedEmail: 'hello@example.test', socialUrl: 'https://www.instagram.com/example/',
+    }
+    const handler = createRenderPreviewApi({ env, fetchImpl: async () => ({ ok: true, json: async () => [{ content: shared }] }) })
+    const response = await handler({ httpMethod: 'GET', rawUrl })
+    assert.equal(response.statusCode, 200)
+    const { content: publicContent } = JSON.parse(response.body)
+    assert.equal(publicContent.verifiedPhone, sharePublicContacts ? shared.verifiedPhone : '')
+    assert.equal(publicContent.verifiedEmail, sharePublicContacts ? shared.verifiedEmail : '')
+    assert.equal(publicContent.socialUrl, '')
+    assert.equal('sharePublicContacts' in publicContent, false)
+  }
 })

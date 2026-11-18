@@ -176,7 +176,22 @@ export function createRenderPreviewApi({ env = process.env, fetchImpl = fetch } 
       if (!response.ok) throw new Error('Preview read failed')
       const rows = await response.json()
       if (!rows?.length) return { statusCode: 404, headers: { 'cache-control': 'no-store' }, body: 'Preview not found or expired.' }
-      const html = renderStaticWebsite(rows[0].content, { noIndex: true })
+      const reviewed = sanitizeWebsiteContent(rows[0].content)
+      if (!reviewed.ok) return { statusCode: 404, headers: { 'cache-control': 'no-store' }, body: 'Preview unavailable.' }
+      const { sharePublicContacts, ...publicContent } = reviewed.content
+      const publicBusiness = validateBusinessInput({
+        ...publicContent, verifiedInfo: 'Shared business concept',
+        verifiedPhone: sharePublicContacts ? publicContent.verifiedPhone : '',
+        verifiedEmail: sharePublicContacts ? publicContent.verifiedEmail : '',
+      })
+      const phone = publicBusiness.errors.verifiedPhone ? '' : publicBusiness.value.verifiedPhone
+      const email = publicBusiness.errors.verifiedEmail ? '' : publicBusiness.value.verifiedEmail
+      const content = { ...publicContent, verifiedPhone: phone, verifiedEmail: email, websiteUrl: '', socialUrl: '', ctaLabel: phone ? 'Call us' : email ? 'Email us' : 'Explore services' }
+      if (url.searchParams.get('format') === 'concept') {
+        return json(200, { content }, { 'x-content-type-options': 'nosniff', 'x-robots-tag': 'noindex, nofollow' })
+      }
+      const claimUrl = '/website-machine/#' + new URLSearchParams({ concept: id, token })
+      const html = renderStaticWebsite(content, { noIndex: true, claimUrl })
       return { statusCode: 200, headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store', 'x-robots-tag': 'noindex, nofollow', 'x-content-type-options': 'nosniff', 'referrer-policy': 'no-referrer', 'content-security-policy': "default-src 'none'; style-src 'unsafe-inline'; img-src data: https:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'" }, body: html }
     } catch {
       return { statusCode: 502, headers: { 'cache-control': 'no-store' }, body: 'Preview unavailable.' }
