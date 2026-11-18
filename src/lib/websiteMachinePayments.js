@@ -289,6 +289,8 @@ export function createStripeWebsiteMachineWebhook({
       const status = Number.isInteger(statusValue) && statusValue >= 100 && statusValue <= 599 ? statusValue : undefined
       const databaseCode = safeLogValue(error?.databaseCode, /^[A-Z0-9]{5}$/)
       const operationName = safeLogValue(error?.websiteMachineOperation, /^[a-z0-9_]{1,80}$/) || operation
+      const netlifyErrorCode = safeLogValue(error?.netlifyErrorCode, /^[A-Z0-9_]{1,80}$/)
+      const netlifyRequestId = safeLogValue(error?.netlifyRequestId, /^[A-Za-z0-9_-]{6,80}$/)
       const effectiveStage = stage === 'fulfillment' ? stageForOperation(operationName) : stage
       const requestId = safeLogValue(
         event.headers?.['x-nf-request-id'] || event.headers?.['X-Nf-Request-Id'] || event.headers?.['x-netlify-request-id'],
@@ -304,6 +306,8 @@ export function createStripeWebsiteMachineWebhook({
           code,
           ...(status ? { status } : {}),
           ...(databaseCode ? { databaseCode } : {}),
+          ...(netlifyErrorCode ? { upstreamCode: netlifyErrorCode } : {}),
+          ...(netlifyRequestId ? { netlifyRequestId } : {}),
           ...(requestId ? { requestId } : {}),
           ...(eventId ? { stripeEventId: eventId } : {}),
           ...(safeOrderId ? { orderId: safeOrderId } : {}),

@@ -474,6 +474,42 @@ test('webhook reports a Supabase operation and SQLSTATE without logging the data
   assert.doesNotMatch(JSON.stringify(logs), /private database detail|synthetic@example\.test/)
 })
 
+test('webhook logs only safe Netlify upload status, provider code, and request correlation', async () => {
+  const event = { id: 'evt_test_netlify_upload_1234', object: 'event', type: 'checkout.session.completed', livemode: false, data: { object: { id: baseSession.id, metadata: baseSession.metadata } } }
+  const signed = signedEvent(event)
+  const logs = []
+  const handler = createStripeWebsiteMachineWebhook({
+    env: { WM_STRIPE_SECRET_KEY: apiKey, WM_STRIPE_WEBHOOK_SECRET: secret },
+    now: () => now,
+    logger: { error: (...args) => logs.push(args) },
+    loadOrder: async () => ({ id: orderId, projectId, ownerId, setupPriceId, mode: 'test', content: { businessName: 'Northstar' } }),
+    confirmPaidOrder: async () => ({ paid: true, delivered: false }),
+    publisher: { publishPaidProject: async () => {
+      const error = new Error('sensitive upstream body includes private customer@example.test and a token')
+      error.status = 503
+      error.code = 'NETLIFY_HTTP_503'
+      error.netlifyErrorCode = 'TEMPORARILY_UNAVAILABLE'
+      error.netlifyRequestId = 'netlifyReq123456'
+      error.websiteMachineOperation = 'netlify_deploy_upload'
+      throw error
+    } },
+    recordDeployment: async () => {},
+    sendDeliveryEmail: async () => {},
+    ...emailState(),
+    fetchImpl: async () => ({ ok: true, json: async () => baseSession }),
+  })
+
+  const response = await handler({ httpMethod: 'POST', body: signed.raw.toString(), headers: { 'stripe-signature': signed.signature, 'x-nf-request-id': 'stripeReq123456' } })
+
+  assert.equal(response.statusCode, 500)
+  assert.deepEqual(logs, [['website_machine_fulfillment_failed', {
+    stage: 'netlify_publish', operation: 'netlify_deploy_upload', errorType: 'Error', code: 'NETLIFY_HTTP_503',
+    status: 503, upstreamCode: 'TEMPORARILY_UNAVAILABLE', netlifyRequestId: 'netlifyReq123456',
+    requestId: 'stripeReq123456', stripeEventId: event.id, orderId,
+  }]])
+  assert.doesNotMatch(JSON.stringify(logs), /sensitive upstream body|customer@example\.test|token/i)
+})
+
 test('a Netlify access restriction is logged safely and cannot record delivery or send email', async () => {
   const event = { id: 'evt_test_access_blocked', object: 'event', type: 'checkout.session.completed', livemode: false, data: { object: { id: baseSession.id, metadata: baseSession.metadata } } }
   const signed = signedEvent(event)

@@ -22,6 +22,7 @@ function netlifyApiOperation(path, method = 'GET') {
   if (/^\/[^/]+\/sites\/$/.test(route) && method === 'POST') return 'netlify_site_create'
   if (/^\/sites\/[^/]+\/metadata$/.test(route)) return method === 'PUT' ? 'netlify_site_metadata_bind' : 'netlify_site_metadata_verify'
   if (/^\/sites\/[^/]+$/.test(route) && method === 'PUT') return 'netlify_deploy_upload'
+  if (/^\/sites\/[^/]+\/deploys$/.test(route)) return 'netlify_deploy_list'
   if (/^\/sites\/[^/]+$/.test(route)) return 'netlify_site_lookup'
   if (/^\/deploys\/[^/]+$/.test(route)) return 'netlify_deploy_poll'
   return 'netlify_api_request'
@@ -111,10 +112,25 @@ export function makeStaticWebsiteZip(html) {
   return Buffer.concat([...localEntries, centralDirectory, end])
 }
 
+function safeNetlifyErrorCode(value) {
+  if (typeof value !== 'string' || !/^[A-Za-z][A-Za-z0-9_.-]{0,63}$/.test(value)) return undefined
+  return value.toUpperCase().replaceAll('-', '_').replaceAll('.', '_')
+}
+
 const jsonResponse = async (response) => {
   if (!response.ok) {
     const error = new Error(`Netlify API request failed (${response.status}).`)
     error.status = response.status
+    const providerRequestId = response.headers?.get?.('x-nf-request-id') || response.headers?.get?.('x-request-id')
+    if (typeof providerRequestId === 'string' && /^[A-Za-z0-9_-]{6,80}$/.test(providerRequestId)) error.netlifyRequestId = providerRequestId
+    const headerCode = response.headers?.get?.('x-nf-error-code') || response.headers?.get?.('x-error-code')
+    let bodyCode
+    try {
+      const body = await response.clone().json()
+      bodyCode = body?.code || body?.error_code || body?.errorCode
+    } catch {}
+    const providerCode = safeNetlifyErrorCode(headerCode || bodyCode)
+    if (providerCode) error.netlifyErrorCode = providerCode
     throw error
   }
   return response.status === 204 ? null : response.json()
@@ -127,6 +143,8 @@ export function createNetlifyCustomerPublisher({
   persistSite,
   sleep = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds)),
   maxPolls = 20,
+  maxUploadAttempts = 3,
+  uploadTimeoutMs = 8_000,
 } = {}) {
   const accountSlug = env.WM_NETLIFY_ACCOUNT_SLUG
   if (typeof accountSlug !== 'string' || !/^[a-z0-9](?:[a-z0-9-]{0,58}[a-z0-9])?$/.test(accountSlug)) {
@@ -136,15 +154,65 @@ export function createNetlifyCustomerPublisher({
   async function api(path, options = {}) {
     if (!env.WM_NETLIFY_CUSTOMER_TOKEN) throw new Error('Customer site publishing is not configured.')
     const operation = netlifyApiOperation(path, options.method || 'GET')
+    const { timeoutMs = 10_000, ...fetchOptions } = options
     try {
       const response = await fetchImpl(`${NETLIFY_API}${path}`, {
-        ...options,
-        headers: { authorization: `Bearer ${env.WM_NETLIFY_CUSTOMER_TOKEN}`, ...options.headers },
+        ...fetchOptions,
+        signal: AbortSignal.timeout(timeoutMs),
+        headers: { authorization: `Bearer ${env.WM_NETLIFY_CUSTOMER_TOKEN}`, ...fetchOptions.headers },
       })
       return await jsonResponse(response)
     } catch (error) {
+      if (error?.name === 'TimeoutError' || error?.name === 'AbortError') error.code ||= 'NETLIFY_REQUEST_TIMEOUT'
+      else if (Number.isInteger(error?.status)) error.code ||= `NETLIFY_HTTP_${error.status}`
       throw attachSafeOperation(error, operation)
     }
+  }
+
+  const isTransientUploadError = (error) => error?.code === 'NETLIFY_REQUEST_TIMEOUT' ||
+    error?.name === 'TypeError' || [408, 425, 429, 500, 502, 503, 504].includes(error?.status)
+
+  async function uploadWithRecovery(site, archive) {
+    // Snapshot deploy IDs before the first ZIP request. A timed-out/5xx response
+    // may still have created a deploy; discover and reuse it before retrying.
+    const priorDeploys = await api(`/sites/${encodeURIComponent(site.id)}/deploys?per_page=10`, { timeoutMs: 3_000 })
+    if (!Array.isArray(priorDeploys)) {
+      throw attachSafeOperation(new Error('Netlify returned an invalid deploy list.'), 'netlify_deploy_list')
+    }
+    const priorIds = new Set(priorDeploys.map((deploy) => deploy?.id).filter((id) => typeof id === 'string'))
+    let lastError
+
+    for (let attempt = 1; attempt <= maxUploadAttempts; attempt += 1) {
+      try {
+        const deploy = await api(`/sites/${encodeURIComponent(site.id)}`, {
+          method: 'PUT', timeoutMs: uploadTimeoutMs,
+          headers: { 'content-type': 'application/zip' }, body: archive,
+        })
+        if (!deploy?.id) throw attachSafeOperation(new Error('Netlify did not start a customer deploy.'), 'netlify_deploy_upload')
+        if (deploy.site_id !== site.id) throw attachSafeOperation(new Error('Netlify returned a deploy for a different site.'), 'netlify_deploy_upload')
+        return deploy
+      } catch (error) {
+        lastError = error
+        if (!isTransientUploadError(error)) throw error
+
+        // Reconcile ambiguous failures before issuing another deploy request.
+        // The site is isolated to this paid project, so a newly-created deploy
+        // belongs to this fulfillment attempt and is safe to continue polling.
+        const deploys = await api(`/sites/${encodeURIComponent(site.id)}/deploys?per_page=10`, { timeoutMs: 3_000 })
+        if (!Array.isArray(deploys)) {
+          throw attachSafeOperation(new Error('Netlify returned an invalid deploy list during upload recovery.'), 'netlify_deploy_list')
+        }
+        const observed = deploys
+          .filter((deploy) => deploy?.site_id === site.id && typeof deploy.id === 'string' && !priorIds.has(deploy.id))
+          .sort((a, b) => Date.parse(b.created_at || '') - Date.parse(a.created_at || ''))[0]
+        if (observed && observed.state !== 'error') return observed
+        if (observed) priorIds.add(observed.id)
+        if (attempt === maxUploadAttempts) throw error
+
+        await sleep(Math.min(250 * (2 ** (attempt - 1)), 1000))
+      }
+    }
+    throw lastError || new Error('Netlify deployment upload failed.')
   }
 
   async function getPublisherAccountId() {
@@ -303,13 +371,7 @@ export function createNetlifyCustomerPublisher({
         }
       }
 
-      const upload = await api(`/sites/${encodeURIComponent(site.id)}`, {
-        method: 'PUT',
-        headers: { 'content-type': 'application/zip' },
-        body: makeStaticWebsiteZip(html),
-      })
-      if (!upload?.id) throw attachSafeOperation(new Error('Netlify did not start a customer deploy.'), 'netlify_deploy_upload')
-      if (upload.site_id !== site.id) throw attachSafeOperation(new Error('Netlify returned a deploy for a different site.'), 'netlify_deploy_upload')
+      const upload = await uploadWithRecovery(site, makeStaticWebsiteZip(html))
       let deploy = upload
       for (let attempt = 0; attempt < maxPolls && !['ready', 'error'].includes(deploy.state); attempt += 1) {
         await sleep(1000)
