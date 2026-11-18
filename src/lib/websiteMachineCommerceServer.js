@@ -26,7 +26,7 @@ function runtime(env) {
 }
 
 function stagingCommerceReady(config) {
-  return config?.mode === 'staging' && (config.publicUrl === 'https://bendarus.netlify.app' || (config.publicUrl === websiteMachineIsolatedStaging.publicUrl && config.url === websiteMachineIsolatedStaging.url)) &&
+  return config?.mode === 'staging' && (config.publicUrl === 'https://bendarus.netlify.app' || config.url === websiteMachineIsolatedStaging.url) &&
     isStripeTestSecretKey(config.stripeSecret) && config.stripeWebhookSecret?.startsWith('whsec_') && config.stripePrice?.startsWith('price_') &&
     typeof config.rpcSecret === 'string' && config.rpcSecret.length >= 32 && config.netlifyToken &&
     config.netlifyAccountSlug === 'website-machine' && config.deliveryEmailApiKey &&
@@ -76,7 +76,7 @@ function inspectStagingEnvironment(env) {
     return value
   }
   requireMatch('WM_RUNTIME_ENV', env.WM_RUNTIME_ENV, (value) => value === 'staging')
-  const expectedStagingUrl = env.WM_STAGING_SUPABASE_URL === websiteMachineIsolatedStaging.url ? websiteMachineIsolatedStaging.publicUrl : 'https://bendarus.netlify.app'
+  const expectedStagingUrl = env.WM_STAGING_SUPABASE_URL === websiteMachineIsolatedStaging.url ? getWebsiteMachineConfig(env)?.publicUrl : 'https://bendarus.netlify.app'
   requireMatch('WM_STAGING_PUBLIC_URL', env.WM_STAGING_PUBLIC_URL, (value) => value === expectedStagingUrl)
   const supabaseUrl = selectedEnv(env, 'WM_STAGING_SUPABASE_URL', 'WM_SUPABASE_URL')
   requireMatch(supabaseUrl.name, supabaseUrl.value, (value) => value === 'https://lqywsbqctoydtdqvjzzw.supabase.co' || (value === websiteMachineIsolatedStaging.url && getWebsiteMachineConfig(env)?.url === value))

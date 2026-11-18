@@ -5,6 +5,7 @@ import { validateResearchSources } from './websiteMachineResearch.js'
 export const websiteMachineIsolatedStaging = Object.freeze({
   url: 'https://awcqqwyhtxhssuetehga.supabase.co',
   publicUrl: 'https://deploy-preview-15--bendarus.netlify.app',
+  dedicatedUrl: 'https://website-machine-pr15-staging.netlify.app',
 })
 const ACTIVE_CRM_SUPABASE_URL = 'https://lqywsbqctoydtdqvjzzw.supabase.co'
 const json = (statusCode, body, headers = {}) => ({ statusCode, headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', ...headers }, body: JSON.stringify(body) })
@@ -24,11 +25,16 @@ export function getWebsiteMachineConfig(env = process.env) {
     if (origin.protocol !== 'https:' || origin.origin !== publicUrl) return null
   } catch { return null }
 
+  const dedicatedStaging = websiteMachineIsolatedStaging.dedicatedUrl
+  const isolatedHost = publicUrl === websiteMachineIsolatedStaging.publicUrl || publicUrl === dedicatedStaging || env.URL === dedicatedStaging
   if (url === websiteMachineIsolatedStaging.url) {
-    if (production || env.CONTEXT === 'production' || publicUrl !== websiteMachineIsolatedStaging.publicUrl ||
+    const matchingHost = publicUrl === dedicatedStaging
+      ? env.URL === dedicatedStaging
+      : publicUrl === websiteMachineIsolatedStaging.publicUrl && env.CONTEXT !== 'production' && env.URL !== dedicatedStaging
+    if (production || !matchingHost ||
         env.WM_STAGING_SUPABASE_URL !== url || env.WM_STAGING_SUPABASE_PUBLISHABLE_KEY !== publishableKey ||
         !publishableKey.startsWith('sb_publishable_')) return null
-  } else if (url !== ACTIVE_CRM_SUPABASE_URL || publicUrl === websiteMachineIsolatedStaging.publicUrl) return null
+  } else if (url !== ACTIVE_CRM_SUPABASE_URL || isolatedHost) return null
   return { url, publishableKey, publicUrl, mode: production ? 'production' : 'staging' }
 }
 

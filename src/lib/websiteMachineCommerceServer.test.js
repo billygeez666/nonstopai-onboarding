@@ -25,6 +25,12 @@ test('the isolated PR database requires explicit staging and the exact preview o
     WM_STAGING_PUBLIC_URL: 'https://deploy-preview-15--bendarus.netlify.app',
   }
   assert.equal(getWebsiteMachineConfig(staging)?.url, isolatedUrl)
+  const dedicatedUrl = 'https://website-machine-pr15-staging.netlify.app'
+  const dedicated = { ...staging, CONTEXT: 'production', URL: dedicatedUrl, WM_STAGING_PUBLIC_URL: dedicatedUrl }
+  assert.equal(getWebsiteMachineConfig(dedicated)?.url, isolatedUrl)
+  assert.equal(getWebsiteMachineConfig({ ...dedicated, URL: 'https://website-machine-live.netlify.app' }), null)
+  assert.equal(getWebsiteMachineConfig({ ...dedicated, WM_STAGING_SUPABASE_URL: supabase }), null)
+  assert.equal(getWebsiteMachineConfig({ ...dedicated, WM_RUNTIME_ENV: 'production' }), null)
   assert.equal(getWebsiteMachineConfig({ ...staging, WM_RUNTIME_ENV: undefined }), null)
   assert.equal(getWebsiteMachineConfig({ ...staging, WM_RUNTIME_ENV: 'preview' }), null)
   assert.equal(getWebsiteMachineConfig({ ...staging, CONTEXT: 'production' }), null)
