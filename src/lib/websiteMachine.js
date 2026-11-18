@@ -96,7 +96,7 @@ export function generateWebsiteContent(input) {
         ? `Looking for ${primaryService.toLowerCase()} in ${location}? Explore the verified services and details shared by ${businessName}.`
         : `Explore ${businessName}, ${article} ${industry.toLowerCase()} in ${location} and review the verified details shared here.`,
       aboutTitle: `About ${businessName}`,
-      aboutDescription: `Learn more about ${businessName} and explore the details shared by the business.`,
+      aboutDescription: `${businessName} · ${industry} in ${location}.`,
       facts,
       services,
       verifiedPhone,
@@ -198,7 +198,7 @@ export function renderStaticWebsite(content, { editable = false, noIndex = false
   const safeEmail = /^[^\s@<>"']+@[^\s@<>"']+\.[^\s@<>"']{2,}$/.test(rawEmail) ? rawEmail : ''
   const serviceItems = services.length ? services : facts
   const serviceLabel = visualStyle ? escapeHtml(content.location) : services.length ? 'Services supplied by the business' : 'Verified business details'
-  const target = safePhone ? `tel:${safePhone}` : safeEmail ? `mailto:${safeEmail}` : safeWebsiteUrl || '#contact-details'
+  const target = safePhone ? `tel:${safePhone}` : safeEmail ? `mailto:${safeEmail}` : safeWebsiteUrl
   const editableAttr = (key, max) => editable ? ` data-wm-edit="${key}" data-wm-max="${max}" contenteditable="true" role="textbox" aria-multiline="true" aria-label="Edit generated website copy" spellcheck="true"` : ''
   const serviceCards = serviceItems.map((item, index) => `
         <article class="wm-service-card"><span class="wm-card-number">${String(index + 1).padStart(2, '0')}</span><h3>${escapeHtml(item)}</h3><p>${services.length ? `Ask ${escapeHtml(content.businessName)} in ${escapeHtml(content.location)} about ${escapeHtml(item.toLowerCase())} and current availability.` : `Business detail supplied for ${escapeHtml(content.businessName)} in ${escapeHtml(content.location)}.`}</p><span class="wm-card-arrow" aria-hidden="true">↗</span></article>`).join('')
@@ -211,11 +211,7 @@ export function renderStaticWebsite(content, { editable = false, noIndex = false
     safeWebsiteUrl ? `<a class="wm-contact-link" href="${escapeHtml(safeWebsiteUrl)}" target="_blank" rel="noreferrer">Visit the current website <span aria-hidden="true">↗</span></a>` : '',
     socialUrl ? `<a class="wm-contact-link" href="${escapeHtml(socialUrl)}" target="_blank" rel="noreferrer">Find us on social media <span aria-hidden="true">↗</span></a>` : '',
   ].filter(Boolean).join('')
-  const contactCopy = visualStyle
-    ? (contactLinks ? 'Get in touch to discuss your enquiry.' : 'Contact details will appear here when supplied.')
-    : contactLinks
-    ? 'Use one of the verified contact methods supplied by the business. Confirm these details before publishing.'
-    : 'No contact details were supplied for this draft. Add a verified phone number, email address or website before publishing.'
+  const contactCopy = 'Get in touch to discuss your enquiry.'
 
   return `<!doctype html>
 <html lang="en-GB">
@@ -259,15 +255,15 @@ export function renderStaticWebsite(content, { editable = false, noIndex = false
 </head>
 <body class="wm-theme-${theme}"${visualStyle ? ` data-style="${visualStyle}"` : ''}>
   ${claimUrl ? '<aside class="wm-preview-entry"><strong>Private-link website concept · Unpublished</strong><a href="' + escapeHtml(claimUrl) + '">Get This Website — £99</a></aside>' : ''}
-  <header class="wm-shell wm-header"><a class="wm-logo" href="#top"><span class="wm-logo-mark" aria-hidden="true">${escapeHtml((content.businessName || '').trim().slice(0, 1).toUpperCase())}</span>${name}</a><nav class="wm-nav" aria-label="Main navigation"><a href="#services">${services.length ? 'Services' : 'Business details'}</a><a href="#about">About</a><a href="#contact-details">Contact</a></nav><a class="wm-header-cta" href="${escapeHtml(target)}">${escapeHtml(content.ctaLabel)} <span aria-hidden="true">↗</span></a></header>
+  <header class="wm-shell wm-header"><a class="wm-logo" href="#top"><span class="wm-logo-mark" aria-hidden="true">${escapeHtml((content.businessName || '').trim().slice(0, 1).toUpperCase())}</span>${name}</a><nav class="wm-nav" aria-label="Main navigation"><a href="#services">${services.length ? 'Services' : 'Business details'}</a><a href="#about">About</a>${contactLinks ? '<a href="#contact-details">Contact</a>' : ''}</nav>${target ? `<a class="wm-header-cta" href="${escapeHtml(target)}">${escapeHtml(content.ctaLabel)} <span aria-hidden="true">↗</span></a>` : ''}</header>
   <main class="wm-shell" id="top">
     <section class="wm-hero" aria-labelledby="hero-title">
-      <div class="wm-hero-copy"><span class="wm-eyebrow"><i class="wm-eyebrow-dot" aria-hidden="true"></i>${escapeHtml(content.industry)} <span>·</span> ${escapeHtml(content.location)}</span><h1 id="hero-title"${editableAttr('heroTitle', 120)}>${title}</h1><p${editableAttr('heroDescription', 240)}>${summary}</p><div class="wm-hero-actions"><a class="wm-button wm-button-primary" href="${escapeHtml(target)}">${escapeHtml(content.ctaLabel)} <span aria-hidden="true">↗</span></a><a class="wm-button-secondary" href="#services">${services.length ? 'Explore services' : 'Explore details'} ↓</a></div><div class="wm-generated-note">Generated marketing copy · verified business facts are identified below</div></div>
+      <div class="wm-hero-copy"><span class="wm-eyebrow"><i class="wm-eyebrow-dot" aria-hidden="true"></i>${escapeHtml(content.industry)} <span>·</span> ${escapeHtml(content.location)}</span><h1 id="hero-title"${editableAttr('heroTitle', 120)}>${title}</h1><p${editableAttr('heroDescription', 240)}>${summary}</p><div class="wm-hero-actions">${target ? `<a class="wm-button wm-button-primary" href="${escapeHtml(target)}">${escapeHtml(content.ctaLabel)} <span aria-hidden="true">↗</span></a>` : ''}<a class="wm-button-secondary" href="#services">${services.length ? 'Explore services' : 'Explore details'} ↓</a></div><div class="wm-generated-note">Generated marketing copy · verified business facts are identified below</div></div>
       <div class="wm-hero-art" aria-hidden="true">${heroArt}<div class="wm-art-caption">${escapeHtml(content.industry)} <span>—</span> ${escapeHtml(content.location)}</div></div>
     </section>
     <section class="wm-section" id="services"><div class="wm-section-heading"><div><p class="wm-section-kicker">${serviceLabel}</p><h2>${visualStyle ? (services.length ? 'Our services' : 'Business details') : (services.length ? 'What the business offers' : 'What we know')}</h2></div>${visualStyle ? '' : `<p>${services.length ? 'Each service listed here was supplied as verified information.' : 'These business details were supplied for this draft and should be checked before publishing.'}</p>`}</div><div class="wm-services">${serviceCards || '<article class="wm-service-card"><span class="wm-card-number">01</span><h3>More details needed</h3><p>Add verified services or business facts to complete this section.</p></article>'}</div></section>
     <section class="wm-section wm-about" id="about"><div><span class="wm-about-label">About the business</span><p class="wm-section-kicker" style="margin-top:12px">${escapeHtml(content.industry)} · ${escapeHtml(content.location)}</p></div><div class="wm-about-copy"><h2${editableAttr('aboutTitle', 120)}>${aboutTitle}</h2><span class="wm-generated-copy-label">Generated marketing copy · editable</span><p${editableAttr('aboutDescription', 300)}>${about}</p>${verifiedFactsList}</div></section>
-    <section class="wm-contact" id="contact-details"><div><p class="wm-section-kicker">Next step</p><h2>Ready to talk about what you need?</h2><p class="wm-contact-note">${contactCopy}</p></div><div class="wm-contact-actions">${contactLinks || (visualStyle ? '' : '<span class="wm-contact-note">Verified contact details needed before publishing</span>')}</div></section>
+    ${contactLinks ? `<section class="wm-contact" id="contact-details"><div><p class="wm-section-kicker">Next step</p><h2>Ready to talk about what you need?</h2><p class="wm-contact-note">${contactCopy}</p></div><div class="wm-contact-actions">${contactLinks}</div></section>` : ''}
   </main>
   ${claimUrl ? '<aside id="claim-website" class="wm-preview-entry">Review your business details before paying. <a href="' + escapeHtml(claimUrl) + '">Get This Website — £99</a></aside>' : ''}
   <footer class="wm-shell wm-footer"><strong>${name}</strong>${noIndex || editable || !visualStyle ? '<span>Draft website · business information must be verified before publishing</span>' : ''}<span>${escapeHtml(content.location)}</span></footer>

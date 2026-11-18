@@ -12,4 +12,6 @@ The customer confirms details against the actual preview, then signs in and open
 
 ## Fulfillment boundary
 
-The existing order and webhook read content from the owner-scoped project record. The redesigned UI saves a dedicated reviewed copy and leaves that project alone once saved. The database does not yet store an immutable order snapshot against direct or concurrent writes by an authorised project owner. To guarantee the exact approved revision independently of the browser, add a checkout-time snapshot column on the order, set it in the order-creation transaction, and have the signed fulfillment lookup return that snapshot with a compatibility fallback for pre-existing orders. Review and test that change separately before modifying production fulfillment.
+New orders snapshot the review project's content in the checkout-order transaction. The payment webhook's signed lookup uses that immutable snapshot, and an idempotent checkout retry keeps the original snapshot. Orders created before the migration continue to use their owner-scoped project content. The snapshot and outreach privacy migrations were exercised together in isolated PostgreSQL against synthetic fixtures.
+
+The staging and production apps share the CRM database. Apply these migrations to an isolated staging database for the Stripe test-mode handoff, or coordinate a separate shared-database rollout once the PR is approved. The current production offer is already active. Leave its activation and existing payment links alone during release verification.

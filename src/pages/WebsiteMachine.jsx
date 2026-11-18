@@ -502,28 +502,23 @@ export default function WebsiteMachine() {
     }
   }
 
-  return (
-    <main className="wm-app">
-      <header className="wm-topbar"><a href="/website-machine/" className="wm-brand">Website Machine</a>{!draftBusiness && !conceptEntry && !paymentNotice && !emailRecoveryMode && <nav aria-label="Page navigation"><a href="#website-examples">Examples</a><a href="#pricing">Pricing</a></nav>}{draftBusiness && paymentNotice !== 'processing' && <button type="button" className="wm-review-edit" onClick={restartPreview} disabled={busy}>Start a new preview</button>}</header>
-      {!draftBusiness && !conceptEntry && !paymentNotice && !emailRecoveryMode && <WebsiteMachineLanding />}
-      {conceptState && <p className="wm-service-state" role="status">{conceptState}</p>}
-      <div data-stage={purchaseStage} className={`wm-workspace wm-sales-builder${draftBusiness || paymentNotice === 'processing' || emailRecoveryMode ? ' wm-builder-result' : ''}`} id="create-preview">
-        {!draftBusiness && paymentNotice !== 'processing' && !emailRecoveryMode && <section className="wm-panel wm-form-panel">
-          <div className="wm-panel-heading"><div><h2>Create your free preview</h2></div></div>
+  const showLanding = !draftBusiness && !conceptEntry && !paymentNotice && !emailRecoveryMode
+  const previewForm = showLanding && (
+<section className="wm-panel wm-form-panel">
           <form onSubmit={regenerate} noValidate>
             {fields.map(([name, label]) => <label className="wm-field" key={name}>
               <span>{label} <b>REQUIRED</b></span>
-              <input name={name} value={input[name]} maxLength={name === 'industry' ? 80 : 100} required onChange={updateInput} aria-invalid={Boolean(validation[name])} />
+              <input name={name} placeholder={{ businessName: 'e.g. Oakfield Plumbing', industry: 'e.g. Plumber', location: 'e.g. Cambridge' }[name]} value={input[name]} maxLength={name === 'industry' ? 80 : 100} required onChange={updateInput} aria-invalid={Boolean(validation[name])} />
               {validation[name] && <small className="wm-error">{validation[name]}</small>}
             </label>)}
             <label className="wm-field">
               <span>Services you offer</span>
-              <textarea name="verifiedInfo" rows="4" maxLength={800} required placeholder={'Boiler servicing\nEmergency plumbing'} value={input.verifiedInfo} onChange={updateInput} aria-invalid={Boolean(validation.verifiedInfo)} />
+              <textarea name="verifiedInfo" rows="2" maxLength={800} required placeholder={'Boiler servicing\nEmergency plumbing'} value={input.verifiedInfo} onChange={updateInput} aria-invalid={Boolean(validation.verifiedInfo)} />
               {validation.verifiedInfo && <small className="wm-error">{validation.verifiedInfo}</small>}
               <small>Describe your services in a few words, one per line.</small>
             </label>
             <details className="wm-research-details">
-              <summary>Add contact details</summary>
+              <summary>Add contact details (optional)</summary>
               <p>Add a business phone number or email for your website’s contact buttons.</p>
               <label className="wm-field"><span>Business phone</span><input name="verifiedPhone" type="tel" maxLength={40} value={input.verifiedPhone || ''} onChange={updateInput} />{validation.verifiedPhone && <small className="wm-error">{validation.verifiedPhone}</small>}</label>
               <label className="wm-field"><span>Business email</span><input name="verifiedEmail" type="email" maxLength={254} value={input.verifiedEmail || ''} onChange={updateInput} />{validation.verifiedEmail && <small className="wm-error">{validation.verifiedEmail}</small>}</label>
@@ -531,10 +526,19 @@ export default function WebsiteMachine() {
             </details>
             <button className="wm-generate" type="submit" disabled={busy}>Create My Free Preview</button>
           </form>
-        </section>}
+        </section>
+  )
+
+  return (
+    <main className="wm-app">
+      <header className="wm-topbar"><a href="/website-machine/" className="wm-brand">Website Machine</a>{!draftBusiness && !conceptEntry && !paymentNotice && !emailRecoveryMode && <nav aria-label="Page navigation"><a href="#website-examples">Examples</a><a href="#pricing">Pricing</a></nav>}{draftBusiness && paymentNotice !== 'processing' && <button type="button" className="wm-review-edit" onClick={restartPreview} disabled={busy}>Start a new preview</button>}</header>
+      {showLanding && <WebsiteMachineLanding>{previewForm}</WebsiteMachineLanding>}
+      {conceptState && <p className="wm-service-state" role="status">{conceptState}</p>}
+      {!showLanding && <div data-stage={purchaseStage} className={`wm-workspace wm-sales-builder${draftBusiness || paymentNotice === 'processing' || emailRecoveryMode ? ' wm-builder-result' : ''}`} id="create-preview">
+
 
         <section className="wm-preview-column">
-          {paymentNotice !== 'processing' && !emailRecoveryMode && <div className="wm-preview-heading"><div><h2 ref={revealHeading} tabIndex={-1}>{draftBusiness ? `${content.businessName}’s website` : 'Example preview'}</h2></div>
+          {paymentNotice !== 'processing' && !emailRecoveryMode && draftBusiness && <div className="wm-preview-heading"><div><h2 ref={revealHeading} tabIndex={-1}>{draftBusiness ? `${content.businessName}’s website` : 'Example preview'}</h2></div>
             <div className="wm-view-toggle" role="group" aria-label="Preview size">
               <button type="button" className={view === 'desktop' ? 'selected' : ''} onClick={() => setView('desktop')}>Desktop</button>
               <button type="button" className={view === 'mobile' ? 'selected' : ''} onClick={() => setView('mobile')}>Mobile</button>
@@ -544,7 +548,7 @@ export default function WebsiteMachine() {
             {['dark', 'balanced', 'light'].map((style) => <button key={style} type="button" aria-pressed={content.visualStyle === style} onClick={() => chooseStyle(style)}>{style}</button>)}
           </div>}
           {draftBusiness && !purchaseStage && paymentNotice !== 'processing' && <div className="wm-result-actions"><button type="button" className="wm-sales-primary" onClick={openPurchase}>Get This Website — £99</button>{!conceptEntry && <button type="button" onClick={() => { setDraftBusiness(null); setPreviewDocument(renderStaticWebsite(initialContent)) }}>Edit preview inputs</button>}</div>}
-          {paymentNotice !== 'processing' && !emailRecoveryMode && <div className={`wm-browser ${view}`} key={revealCount}>
+          {paymentNotice !== 'processing' && !emailRecoveryMode && draftBusiness && <div className={`wm-browser ${view}`} key={revealCount}>
             <div className="wm-browser-bar"><span className="wm-dots"><i /><i /><i /></span><span className="wm-address">Website preview</span><span className="wm-preview-label">DRAFT</span></div>
             <iframe title={`Website preview for ${content.businessName}`} sandbox="" srcDoc={previewDocument} />
           </div>}
@@ -623,8 +627,8 @@ export default function WebsiteMachine() {
           </section>}
           </div>}
         </section>
-      </div>
-      {!draftBusiness && !conceptEntry && !paymentNotice && !emailRecoveryMode && <WebsiteMachineDetails />}
+      </div>}
+      {showLanding && <WebsiteMachineDetails />}
       <footer className="wm-page-footer">Website Machine by NONSTOP AI <span>·</span> <a href="/privacy/">Privacy</a></footer>
     </main>
   )

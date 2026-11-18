@@ -111,3 +111,16 @@
   .wm-app [data-stage="review"] .wm-browser iframe { min-height:290px; height:43vh; }
 }
 .wm-share-option { display:flex; align-items:center; gap:10px; margin:10px 0; font-size:14px; }
+
+.wm-app .wm-sales-hero { align-items:start; gap:clamp(24px,5vw,76px); padding-block:clamp(24px,4vw,52px); }
+.wm-app .wm-sales-hero h1 { font-size:clamp(34px,4.2vw,65px); margin-bottom:10px; }
+.wm-app .wm-sales-hero p { margin:0 0 20px; }
+.wm-app .wm-sales-hero .wm-form-panel { padding:0; background:transparent; border:0; }
+.wm-app .wm-sales-hero .wm-field { margin-bottom:10px; }
+.wm-app .wm-sales-hero .wm-field input,.wm-app .wm-sales-hero .wm-field textarea { font-size:16px; }
+.wm-app .wm-sales-hero .wm-research-details { margin:8px 0; }
+.wm-app .wm-sales-showcase { align-self:center; }
+@media(max-width:760px) {
+  .wm-app .wm-sales-hero { gap:24px; }
+  .wm-app .wm-sales-showcase { max-width:480px; }
+}

@@ -20,7 +20,7 @@ test('validates required fields and generates structured copy from supplied fact
   assert.deepEqual(result.content.facts, ['MOT testing', 'Vehicle servicing', 'Located in Kirkstall'])
   assert.deepEqual(result.content.services, ['MOT testing', 'Vehicle servicing'])
   assert.match(result.content.heroDescription, /looking for mot testing in Leeds/i)
-  assert.match(result.content.aboutDescription, /details shared by the business/i)
+  assert.match(result.content.aboutDescription, /Independent garage in Leeds/i)
   assert.equal('reviews' in result.content, false)
   assert.equal('openingHours' in result.content, false)
   assert.equal('qualifications' in result.content, false)
@@ -50,7 +50,7 @@ test('verified contact buttons only render validated business contact details', 
   assert.equal(validateBusinessInput({ ...garage, verifiedPhone: 'call-me' }).ok, false)
   assert.equal(validateBusinessInput({ ...garage, verifiedEmail: 'not-an-email' }).ok, false)
   const noContact = generateWebsiteContent({ ...garage, verifiedPhone: '', verifiedEmail: '' }).content
-  assert.match(renderStaticWebsite(noContact), /Verified contact details needed before publishing/)
+  assert.doesNotMatch(renderStaticWebsite(noContact), /Contact details needed|id="contact-details"/)
   assert.doesNotMatch(renderStaticWebsite(noContact), /href="(?:tel:|mailto:)/)
 })
 
@@ -63,7 +63,7 @@ test('caps lengths, rejects excessive fact counts, and sanitizes edited copy', (
   assert.equal(validateBusinessInput({ ...garage, verifiedServices: Array(9).fill('Service').join('\n') }).errors.verifiedServices, 'Use 8 verified services or fewer.')
 })
 
-test('renders a responsive one-page business site with industry art direction and explicit contact gaps', () => {
+test('renders a responsive one-page business site with industry art direction and verified contact links', () => {
   const content = generateWebsiteContent(garage).content
   const html = renderStaticWebsite(content)
   assert.match(html, /wm-theme-garage/)
@@ -72,7 +72,7 @@ test('renders a responsive one-page business site with industry art direction an
   assert.match(html, /What the business offers/)
   assert.match(html, /Ask Northstar Motor Works in Leeds about mot testing and current availability\./i)
   assert.match(html, /wm-contact/)
-  assert.match(html, /Use one of the verified contact methods supplied by the business/)
+  assert.match(html, /Get in touch to discuss your enquiry/)
   assert.equal((html.match(/MOT testing/g) || []).length, 2)
   assert.match(html, /@media\(max-width:760px\)/)
   assert.match(html, /@media\(max-width:440px\)/)
