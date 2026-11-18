@@ -154,6 +154,14 @@ test('public preview serves only a valid database-matched, unexpired token as no
   assert.doesNotMatch(response.body, /<script>/)
   const invalid = await handler({ httpMethod: 'GET', rawUrl: `https://nonstopai-staging-preview.netlify.app/.netlify/functions/website-machine-render-preview?id=${project.id}&token=short` })
   assert.equal(invalid.statusCode, 404)
+  const concept = await handler({ httpMethod: 'GET', rawUrl: `https://nonstopai-staging-preview.netlify.app/.netlify/functions/website-machine-render-preview?id=${project.id}&token=${token}&format=concept` })
+  assert.match(response.body, /Publish this design for £99/)
+  assert.equal(concept.headers['cache-control'], 'no-store')
+  const shared = JSON.parse(concept.body)
+  assert.deepEqual(Object.keys(shared), ['content'])
+  assert.equal(shared.content.verifiedPhone, '')
+  assert.equal(shared.content.verifiedEmail, '')
+  assert.equal(shared.content.websiteUrl, '')
 })
 
 test('delivery returns a fixed static attachment only to the authenticated project owner', async () => {
