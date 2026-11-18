@@ -43,8 +43,10 @@ export function createAuthApi({ env = process.env, fetchImpl = fetch } = {}) {
       const email = body.email.trim()
       const signup = body.action === 'signup'
       if (signup && (body.password.length < 12 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))) return json(400, { error: 'Use a valid email and a password with at least 12 characters.' }, cors())
+      const signupUrl = new URL('/auth/v1/signup', config.url)
+      signupUrl.searchParams.set('redirect_to', new URL('/website-machine/', config.publicUrl).href)
       const response = signup
-        ? await fetchImpl(`${config.url}/auth/v1/signup`, { method: 'POST', headers: { apikey: config.publishableKey, 'content-type': 'application/json' }, body: JSON.stringify({ email, password: body.password, options: { emailRedirectTo: `${config.publicUrl}/website-machine/` } }) })
+        ? await fetchImpl(signupUrl.href, { method: 'POST', headers: { apikey: config.publishableKey, 'content-type': 'application/json' }, body: JSON.stringify({ email, password: body.password }) })
         : await fetchImpl(`${config.url}/auth/v1/token?grant_type=password`, { method: 'POST', headers: { apikey: config.publishableKey, 'content-type': 'application/json' }, body: JSON.stringify({ email, password: body.password }) })
       if (!response.ok) return json(signup ? 400 : 401, { error: signup ? 'Account could not be created. Check the email or try signing in.' : 'Sign-in failed. Check your account details.' }, cors())
       const session = await response.json()

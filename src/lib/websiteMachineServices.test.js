@@ -44,8 +44,10 @@ test('signup uses Supabase Auth confirmation redirect and never bypasses email c
   const response = await handler(event('POST', { action: 'signup', email: 'new-user@example.test', password: 'long-test-password' }))
   assert.equal(response.statusCode, 200)
   assert.equal(JSON.parse(response.body).confirmationRequired, true)
-  assert.match(sent.url, /auth\/v1\/signup$/)
-  assert.deepEqual(JSON.parse(sent.options.body).options, { emailRedirectTo: 'https://bendarus.netlify.app/website-machine/' })
+  const signupUrl = new URL(sent.url)
+  assert.equal(signupUrl.pathname, '/auth/v1/signup')
+  assert.equal(signupUrl.searchParams.get('redirect_to'), 'https://bendarus.netlify.app/website-machine/')
+  assert.deepEqual(JSON.parse(sent.options.body), { email: 'new-user@example.test', password: 'long-test-password' })
   assert.equal(JSON.parse(response.body).accessToken, undefined)
 })
 
