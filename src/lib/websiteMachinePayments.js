@@ -88,6 +88,7 @@ export function createWebsiteMachineCheckoutApi({
         if (!authorizedTester) return { statusCode: 403, body: JSON.stringify({ error: 'Staging checkout is restricted to approved testers.' }) }
       }
       const body = JSON.parse(event.body || '{}')
+      if (body.hostingAccepted !== true) return { statusCode: 400, body: JSON.stringify({ error: 'Accept the hosting terms before continuing to Stripe.' }) }
       if (!/^[0-9a-f-]{36}$/i.test(body.projectId || '')) return { statusCode: 400, body: JSON.stringify({ error: 'A valid project is required.' }) }
       if (body.domain || body.domainChallenge) {
         const challengeExpiry = Date.parse(body.domainChallenge?.expiresAt || '')
@@ -251,7 +252,7 @@ export function createStripeWebsiteMachineWebhook({
         if (claim?.status === 'accepted') return 'accepted'
         if (claim?.shouldSend !== true || !claim.attemptId) return claim?.status || 'unknown'
         try {
-          const result = await runOperation('resend_send_delivery_email', () => sendDeliveryEmail({ to: recipient, businessName: order.content?.businessName || 'Your business', deliveryUrl: siteUrl, orderId: order.id }))
+          const result = await runOperation('resend_send_delivery_email', () => sendDeliveryEmail({ to: recipient, businessName: order.content?.businessName || 'Your business', deliveryUrl: siteUrl, orderId: order.id, hostingFreeUntil: claim.hostingFreeUntil }))
           await runOperation('supabase_record_email_acceptance', () => finishDeliveryEmail({ orderId: order.id, mode: order.mode, attemptId: claim.attemptId, outcome: 'accepted', messageId: result?.messageId || null }))
           return 'accepted'
         } catch (error) {

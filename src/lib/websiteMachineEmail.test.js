@@ -39,3 +39,23 @@ test('a successful Resend response records the provider message id', async () =>
   const send = createWebsiteMachineDeliveryEmail({ apiKey: 're_test_secret', from: 'sites@example.test', fetchImpl: async () => ({ ok: true, json: async () => ({ id: 'resend-message-123' }) }) })
   assert.deepEqual(await send({ to: 'customer@example.test', businessName: 'Northstar', deliveryUrl: 'https://northstar.netlify.app', orderId }), { sent: true, messageId: 'resend-message-123' })
 })
+
+test('delivery email includes the recorded hosting end date in both formats', async () => {
+  let message
+  const send = createWebsiteMachineDeliveryEmail({
+    apiKey: 're_test', from: 'delivery@example.test',
+    fetchImpl: async (_, options) => {
+      message = JSON.parse(options.body)
+      return { ok: true, json: async () => ({ id: 'message' }) }
+    },
+  })
+  await send({
+    to: 'buyer@example.test', businessName: 'Demo', deliveryUrl: 'https://demo.netlify.app',
+    orderId: '11111111-1111-4111-8111-111111111111', hostingFreeUntil: '2026-12-18T18:30:00Z',
+  })
+  for (const body of [message.text, message.html]) {
+    assert.match(body, /£9\.99\/month/)
+    assert.match(body, /18 December 2026/)
+    assert.match(body, /No automatic hosting charges/)
+  }
+})

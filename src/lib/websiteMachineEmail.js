@@ -1,3 +1,5 @@
+import { websiteMachineHostingTerms } from './websiteMachineHosting.js'
+
 const emailPattern = /^[^\s@<>"']+@[^\s@<>"']+\.[^\s@<>"']{2,}$/
 
 function escapeHtml(value) {
@@ -5,7 +7,7 @@ function escapeHtml(value) {
 }
 
 export function createWebsiteMachineDeliveryEmail({ apiKey, from, fetchImpl = fetch } = {}) {
-  return async ({ to, businessName, deliveryUrl, orderId }) => {
+  return async ({ to, businessName, deliveryUrl, orderId, hostingFreeUntil }) => {
     const fail = (message, deliveryOutcome = 'failed', safeCode = 'DELIVERY_EMAIL_INVALID') => {
       const error = new Error(message)
       error.deliveryOutcome = deliveryOutcome
@@ -25,6 +27,8 @@ export function createWebsiteMachineDeliveryEmail({ apiKey, from, fetchImpl = fe
     const name = String(businessName || 'Your business').slice(0, 100)
     const safeName = escapeHtml(name)
     const safeUrl = escapeHtml(url.toString())
+    const end = new Date(hostingFreeUntil ?? NaN)
+    const hosting = Number.isNaN(end.getTime()) ? '' : `${websiteMachineHostingTerms} Your free hosting ends on ${new Intl.DateTimeFormat('en-GB', { dateStyle: 'long', timeStyle: 'short', timeZone: 'Europe/London' }).format(end)} (UK time).`
     let response
     try {
       response = await fetchImpl('https://api.resend.com/emails', {
@@ -34,8 +38,8 @@ export function createWebsiteMachineDeliveryEmail({ apiKey, from, fetchImpl = fe
           from,
           to: [to],
           subject: `Your ${name} website is ready`,
-          text: `Your website is ready: ${url.toString()}\n\nThis link is your published website. Reply to your Website Machine contact if you need help.`,
-          html: `<p>Your website is ready.</p><p><a href="${safeUrl}">Visit ${safeName}</a></p><p>This is the published website for ${safeName}.</p>`,
+          text: `Your website is ready: ${url.toString()}\n\nThis link is your published website. Reply to your Website Machine contact if you need help.${hosting ? `\n\n${hosting}` : ''}`,
+          html: `<p>Your website is ready.</p><p><a href="${safeUrl}">Visit ${safeName}</a></p><p>This is the published website for ${safeName}.</p>${hosting ? `<p>${escapeHtml(hosting)}</p>` : ''}`,
         }),
       })
     } catch {

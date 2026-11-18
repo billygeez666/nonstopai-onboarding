@@ -1,0 +1,1 @@
+export const websiteMachineHostingTerms = "Your website costs £99 today and includes 30 days of free hosting. After 30 days, continued hosting costs £9.99/month. We'll contact you before the free period ends to arrange payment. No automatic hosting charges will begin without your authorization."

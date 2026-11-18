@@ -55,7 +55,7 @@ test('production checkout verifies live-mode price but Supabase inactive-offer g
     if (url.endsWith('/rpc/wm_create_checkout_order')) return { ok: false, status: 400, json: async () => ({ code: '22023', message: 'unapproved Website Machine one-off live price' }) }
     throw new Error('The inactive offer must block checkout-session creation')
   } })
-  const response = await handler({ httpMethod: 'POST', headers: { authorization: 'Bearer authenticated-user-token' }, body: JSON.stringify({ projectId }) })
+  const response = await handler({ httpMethod: 'POST', headers: { authorization: 'Bearer authenticated-user-token' }, body: JSON.stringify({ hostingAccepted: true, projectId }) })
   assert.equal(response.statusCode, 409)
   assert.equal(JSON.parse(response.body).code, 'WM_LIVE_OFFER_INACTIVE')
   assert.deepEqual(calls.filter(({ url }) => url.includes('/checkout/sessions')), [])
@@ -184,7 +184,7 @@ test('staging checkout asks the self-only tester RPC before reading the owner pr
       if (url.includes('/rest/v1/wm_projects')) return { ok: true, json: async () => [] }
       throw new Error('project or tester checks must stop before Stripe')
     } })
-    const response = await handler({ httpMethod: 'POST', headers: { authorization: 'Bearer staging-user-token' }, body: JSON.stringify({ projectId, idempotencyKey: `wm-private-test-${allowed ? 'yes' : 'no'}-01` }) })
+    const response = await handler({ httpMethod: 'POST', headers: { authorization: 'Bearer staging-user-token' }, body: JSON.stringify({ hostingAccepted: true, projectId, idempotencyKey: `wm-private-test-${allowed ? 'yes' : 'no'}-01` }) })
     return { response, calls }
   }
 
@@ -222,7 +222,7 @@ test('inactive £99 test offer returns a safe conflict after authentication and 
     throw new Error(`Unexpected request: ${url}`)
   } })
 
-  const response = await handler({ httpMethod: 'POST', headers: { authorization: 'Bearer staging-user-token' }, body: JSON.stringify({ projectId, idempotencyKey: 'wm-inactive-offer-check-01' }) })
+  const response = await handler({ httpMethod: 'POST', headers: { authorization: 'Bearer staging-user-token' }, body: JSON.stringify({ hostingAccepted: true, projectId, idempotencyKey: 'wm-inactive-offer-check-01' }) })
   const body = JSON.parse(response.body)
   assert.equal(response.statusCode, 409)
   assert.equal(body.code, 'WM_TEST_OFFER_INACTIVE')

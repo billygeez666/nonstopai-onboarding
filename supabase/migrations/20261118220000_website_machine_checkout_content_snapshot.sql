@@ -1,6 +1,8 @@
 begin;
 
-alter table public.wm_orders add column if not exists checkout_content jsonb;
+alter table public.wm_orders add column if not exists checkout_content jsonb,
+  add column if not exists hosting_started_at timestamptz,
+  add column if not exists hosting_free_until timestamptz;
 
 create or replace function public.wm_create_checkout_order(
   p_project_id uuid, p_idempotency_key text, p_mode text, p_setup_price_id text,
@@ -69,6 +71,55 @@ begin
     'content',coalesce(v_order.checkout_content,v_project.content),'siteRecord',(select jsonb_build_object('project_id',s.project_id,'owner_id',s.owner_id,'site_id',s.site_id,
       'site_name',s.site_name,'custom_domain',s.custom_domain,'current_deploy_id',s.current_deploy_id,'previous_deploy_ids',s.previous_deploy_ids,
       'site_url',s.site_url) from public.wm_customer_sites s where s.project_id=v_order.project_id));
+end;
+$$;
+
+create or replace function public.wm_record_customer_deployment(p_project_id uuid,p_owner_id uuid,p_mode text,p_deploy_id text,p_previous_deploy_id text,p_site_url text,p_verified_deploy_url text,p_signature text)
+returns jsonb language plpgsql security definer set search_path = '' as $$
+declare v_message text; v_site public.wm_customer_sites;
+begin
+  v_message:=p_mode||E'\n'||p_project_id::text||E'\n'||p_owner_id::text||E'\n'||p_deploy_id||E'\n'||coalesce(p_previous_deploy_id,'')||E'\n'||p_site_url||E'\n'||p_verified_deploy_url;
+  if p_mode not in ('test','live') or not wm_internal.verify_hmac(v_message,p_signature) then raise exception 'unauthorized' using errcode='42501'; end if;
+  update public.wm_customer_sites set
+    previous_deploy_ids=case when current_deploy_id is not null and current_deploy_id<>p_deploy_id then array_prepend(current_deploy_id,previous_deploy_ids) else previous_deploy_ids end,
+    current_deploy_id=p_deploy_id,site_url=p_site_url,verified_deploy_url=p_verified_deploy_url,status='delivered',updated_at=now()
+    where project_id=p_project_id and owner_id=p_owner_id returning * into v_site;
+  if not found then raise exception 'customer site record not found' using errcode='P0002'; end if;
+  update public.wm_orders set status=case when status='delivered' then status else 'delivering' end,
+    hosting_started_at=case when checkout_content is not null then coalesce(hosting_started_at,now()) else hosting_started_at end,
+    hosting_free_until=case when checkout_content is not null then coalesce(hosting_free_until,now()+interval '720 hours') else hosting_free_until end,
+    updated_at=now() where project_id=p_project_id and owner_id=p_owner_id and mode=p_mode and status in ('paid','delivering','delivered','failed');
+  return jsonb_build_object('siteId',v_site.site_id,'siteName',v_site.site_name,'projectId',v_site.project_id,'ownerId',v_site.owner_id,'customDomain',v_site.custom_domain,
+    'siteUrl',v_site.site_url,'deployId',v_site.current_deploy_id,'previousDeployIds',v_site.previous_deploy_ids,'status',v_site.status);
+end;
+$$;
+
+create or replace function public.wm_claim_delivery_email(p_order_id uuid,p_mode text,p_signature text)
+returns jsonb language plpgsql security definer set search_path = '' as $$
+declare v_order public.wm_orders; v_delivery public.wm_delivery_emails; v_attempt uuid;
+begin
+  if p_mode not in ('test','live') or not wm_internal.verify_hmac(p_mode||E'\nclaim_delivery_email:'||p_order_id::text,p_signature) then raise exception 'unauthorized' using errcode='42501'; end if;
+  select * into v_order from public.wm_orders where id=p_order_id for update;
+  if not found or v_order.mode<>p_mode or v_order.paid_at is null or v_order.status not in ('delivering','delivered') then raise exception 'paid Website Machine order required' using errcode='42501'; end if;
+  if not exists(select 1 from public.wm_customer_sites s where s.project_id=v_order.project_id and s.owner_id=v_order.owner_id and s.status='delivered' and s.site_url like 'https://%') then raise exception 'verified published customer website required' using errcode='42501'; end if;
+  v_attempt:=gen_random_uuid();
+  insert into public.wm_delivery_emails(order_id,status,attempt_count,attempt_id,attempt_started_at,lease_expires_at)
+  values(p_order_id,'pending',1,v_attempt,now(),now()+interval '5 minutes') on conflict(order_id) do nothing;
+  if found then return jsonb_build_object('status','pending','shouldSend',true,'attemptId',v_attempt,'hostingFreeUntil',v_order.hosting_free_until); end if;
+  select * into v_delivery from public.wm_delivery_emails where order_id=p_order_id for update;
+  if v_delivery.status='accepted' then return jsonb_build_object('status','accepted','shouldSend',false); end if;
+  if v_delivery.status='unknown' then return jsonb_build_object('status','unknown','shouldSend',false); end if;
+  if v_delivery.status='pending' then
+    if v_delivery.lease_expires_at>now() then return jsonb_build_object('status','pending','shouldSend',false); end if;
+    update public.wm_delivery_emails set status='unknown',unknown_at=now(),error_code='DELIVERY_ATTEMPT_LEASE_EXPIRED',updated_at=now() where order_id=p_order_id and status='pending';
+    return jsonb_build_object('status','unknown','shouldSend',false);
+  end if;
+  if v_delivery.status='failed' then
+    v_attempt:=gen_random_uuid();
+    update public.wm_delivery_emails set status='pending',attempt_count=attempt_count+1,attempt_id=v_attempt,attempt_started_at=now(),lease_expires_at=now()+interval '5 minutes',failed_at=null,error_code=null,updated_at=now() where order_id=p_order_id;
+    return jsonb_build_object('status','pending','shouldSend',true,'attemptId',v_attempt,'hostingFreeUntil',v_order.hosting_free_until);
+  end if;
+  return jsonb_build_object('status',v_delivery.status,'shouldSend',false);
 end;
 $$;
 

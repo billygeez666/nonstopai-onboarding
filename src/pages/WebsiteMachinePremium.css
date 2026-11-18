@@ -124,3 +124,8 @@
   .wm-app .wm-sales-hero { gap:24px; }
   .wm-app .wm-sales-showcase { max-width:480px; }
 }
+
+.wm-hosting-terms { margin:16px 0; padding:14px; border:1px solid #687b65; border-radius:8px; }
+.wm-hosting-terms legend { padding-inline:6px; font-weight:700; }
+.wm-hosting-terms label { display:flex; align-items:center; gap:10px; min-height:44px; }
+.wm-hosting-terms input[type="checkbox"] { width:20px; height:20px; flex:none; accent-color:#a6e665; }

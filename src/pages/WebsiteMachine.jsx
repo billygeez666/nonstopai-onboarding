@@ -1,3 +1,4 @@
+import { websiteMachineHostingTerms } from '../lib/websiteMachineHosting.js'
 import { useEffect, useRef, useState } from 'react'
 import { generateWebsiteContent, renderStaticWebsite, sanitizeEditableText, sanitizeWebsiteContent, validateBusinessInput } from '../lib/websiteMachine.js'
 import { fetchWebsiteMachineRequest, getWebsiteMachineActionState } from '../lib/websiteMachineUiState.js'
@@ -57,6 +58,7 @@ export default function WebsiteMachine() {
   const [restored] = useState(restorePurchaseDraft)
   const [input, setInput] = useState(restored?.business || emptyInput)
   const [draftBusiness, setDraftBusiness] = useState(restored?.business || null)
+  const [hostingAccepted, setHostingAccepted] = useState(false)
   const [purchaseStage, setPurchaseStage] = useState(restored ? 'review' : '')
   const [purchaseFieldsState, setPurchaseFieldsState] = useState({})
   const [purchaseErrors, setPurchaseErrors] = useState({})
@@ -179,6 +181,7 @@ export default function WebsiteMachine() {
   }
 
   function openPurchase() {
+    setHostingAccepted(false)
     setPurchaseFieldsState({ ...draftBusiness, heroTitle: content.heroTitle })
     setPurchaseErrors({})
     setServiceState('')
@@ -416,6 +419,7 @@ export default function WebsiteMachine() {
   }
 
   async function beginCheckout() {
+    if (!hostingAccepted) return
     setBusyAction('Preparing secure checkout')
     setServiceState('')
     try {
@@ -449,7 +453,7 @@ export default function WebsiteMachine() {
       const projectId = checkoutProject.current.id
       const response = await request('/.netlify/functions/website-machine-checkout', {
         method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${session}`, 'idempotency-key': crypto.randomUUID() },
-        body: JSON.stringify({ projectId, ...(domain.trim() ? { domain: domainChallenge.domain, domainChallenge } : {}) }),
+        body: JSON.stringify({ projectId, hostingAccepted, ...(domain.trim() ? { domain: domainChallenge.domain, domainChallenge } : {}) }),
       })
       const result = await response.json()
       if (!response.ok) throw new Error(result.error || 'Secure checkout could not be prepared.')
@@ -623,7 +627,12 @@ export default function WebsiteMachine() {
             {domain.trim() && <button type="button" onClick={requestDomainChallenge} disabled={busy || !session}>Create DNS ownership check</button>}
             {domainRecord && <div className="wm-domain-record"><b>TXT record · expires {new Date(domainRecord.expiresAt).toLocaleString()}</b><code>{domainRecord.name}</code><code>{domainRecord.value}</code></div>}
             </details>
-            {session ? <button type="button" className="wm-checkout-button" onClick={beginCheckout} disabled={actionState.checkoutDisabled || !draftBusiness}>{busyAction === 'Preparing secure checkout' ? 'Preparing secure checkout…' : 'Continue to Stripe — £99'}</button> : <a href="#website-account">Sign in or create an account to continue</a>}
+            <fieldset className="wm-hosting-terms">
+              <legend>Hosting after publication</legend>
+              <p id="wm-hosting-disclosure">{websiteMachineHostingTerms}</p>
+              <label><input type="checkbox" checked={hostingAccepted} onChange={(event) => setHostingAccepted(event.target.checked)} aria-describedby="wm-hosting-disclosure" /> I agree to the hosting terms.</label>
+            </fieldset>
+            {session ? <button type="button" className="wm-checkout-button" onClick={beginCheckout} disabled={actionState.checkoutDisabled || !draftBusiness || !hostingAccepted}>{busyAction === 'Preparing secure checkout' ? 'Preparing secure checkout…' : 'Continue to Stripe — £99'}</button> : <a href="#website-account">Sign in or create an account to continue</a>}
           </section>}
           </div>}
         </section>

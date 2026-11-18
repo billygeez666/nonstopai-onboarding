@@ -8,10 +8,14 @@ The customer confirms details against the actual preview, then signs in and open
 
 - Apply and verify the public-preview projection migration in the appropriate environment. The existing token-gated RPC returns the complete stored content. The migration restricts its output, preserves prior token and expiry rules, and suppresses business phone and email unless explicitly approved for public sharing. Use only verified public information in free-text fields when preparing outreach concepts.
 - Verify real account confirmation and return URLs on the intended staging hostname. Verify checkout using a test-mode account and the existing test offer if a new sandbox order is separately authorised. Keep production Stripe, Netlify and Resend settings as configured.
-- Confirm the commercial commitment for how long the hosted address is maintained and the scope of support before promising any duration or service level.
+- Confirm the manual contact owner and process for customers nearing the free-hosting end date.
 
 ## Fulfillment boundary
 
 New orders snapshot the review project's content in the checkout-order transaction. The payment webhook's signed lookup uses that immutable snapshot, and an idempotent checkout retry keeps the original snapshot. Orders created before the migration continue to use their owner-scoped project content. The snapshot and outreach privacy migrations were exercised together in isolated PostgreSQL against synthetic fixtures.
 
 The staging and production apps share the CRM database. Apply these migrations to an isolated staging database for the Stripe test-mode handoff, or coordinate a separate shared-database rollout once the PR is approved. The current production offer is already active. Leave its activation and existing payment links alone during release verification.
+
+## Hosting
+
+Checkout requires an explicit acknowledgement of the £99 one-off purchase and 30 days of free hosting, followed by optional continued hosting at £9.99/month. No recurring charge or suspension is scheduled. Once publication is recorded, the order stores the hosting start and end timestamps. Reconciliation preserves both dates. The existing delivery email includes the terms and end date for orders with a recorded hosting window.

@@ -86,7 +86,7 @@ test('checkout rejects existing Stripe products that do not match Website Machin
     loadOwnedProject: async () => ({ id: projectId, owner_id: ownerId }),
     fetchImpl: async () => ({ ok: true, json: async () => ({ id: setupPriceId, livemode: false, active: true, currency: 'gbp', unit_amount: 19900, recurring: null, product: { active: true, name: 'Website Machine One-off' } }) }),
   })
-  const response = await handler({ httpMethod: 'POST', headers: { authorization: 'Bearer customer-session' }, body: JSON.stringify({ projectId, idempotencyKey: 'wm-checkout-test-01' }) })
+  const response = await handler({ httpMethod: 'POST', headers: { authorization: 'Bearer customer-session' }, body: JSON.stringify({ hostingAccepted: true, projectId, idempotencyKey: 'wm-checkout-test-01' }) })
   assert.equal(response.statusCode, 409)
   assert.match(JSON.parse(response.body).error, /£99/)
 })
@@ -99,7 +99,7 @@ test('checkout rejects credentials that do not match the configured Stripe mode'
     loadOwnedProject: async () => { calls += 1; return { id: projectId, owner_id: ownerId } },
     fetchImpl: async () => { calls += 1; throw new Error('must reject before external request') },
   })
-  const event = { httpMethod: 'POST', body: JSON.stringify({ projectId, idempotencyKey: 'live-checkout-test-001' }) }
+  const event = { httpMethod: 'POST', body: JSON.stringify({ hostingAccepted: true, projectId, idempotencyKey: 'live-checkout-test-001' }) }
   const missingLiveKey = await makeHandler({ WM_STRIPE_PRICE_ID: setupPriceId, WM_STRIPE_LIVEMODE: 'true' })(event)
   const testKeyWithLiveFlag = await makeHandler({ WM_STRIPE_SECRET_KEY: apiKey, WM_STRIPE_PRICE_ID: setupPriceId, WM_STRIPE_LIVEMODE: 'true' })(event)
   assert.equal(missingLiveKey.statusCode, 503)
@@ -142,7 +142,7 @@ test('live checkout uses only verified live £99 price and binds a live order wi
       return { ok: true, json: async () => ({ id: 'cs_live_12345678', url: 'https://checkout.stripe.com/live', livemode: true, metadata: { wm_order_id: form.get('metadata[wm_order_id]') } }) }
     },
   })
-  const response = await handler({ httpMethod: 'POST', headers: { authorization: 'Bearer session' }, body: JSON.stringify({ projectId }) })
+  const response = await handler({ httpMethod: 'POST', headers: { authorization: 'Bearer session' }, body: JSON.stringify({ hostingAccepted: true, projectId }) })
   assert.equal(response.statusCode, 200)
   assert.equal(created.mode, 'live')
   assert.equal(created.setupPriceId, 'price_live_fixture')
@@ -160,7 +160,7 @@ test('staging checkout denies users outside the tester allowlist before project,
     createOrder: async () => { downstreamCalls += 1; return { id: orderId } },
     fetchImpl: async () => { downstreamCalls += 1; throw new Error('unauthorized tester must not contact Stripe') },
   })
-  const response = await checkout({ httpMethod: 'POST', headers: { authorization: 'Bearer customer-session' }, body: JSON.stringify({ projectId, idempotencyKey: 'wm-checkout-allowlist-01' }) })
+  const response = await checkout({ httpMethod: 'POST', headers: { authorization: 'Bearer customer-session' }, body: JSON.stringify({ hostingAccepted: true, projectId, idempotencyKey: 'wm-checkout-allowlist-01' }) })
   assert.equal(response.statusCode, 403)
   assert.match(JSON.parse(response.body).error, /approved testers/)
   assert.equal(downstreamCalls, 0)
@@ -175,7 +175,7 @@ test('staging checkout fails closed when tester authorization is unavailable', a
     loadOwnedProject: async () => { downstreamCalls += 1; return { id: projectId, owner_id: ownerId } },
     fetchImpl: async () => { downstreamCalls += 1; throw new Error('must remain unreachable') },
   })
-  const response = await checkout({ httpMethod: 'POST', headers: { authorization: 'Bearer customer-session' }, body: JSON.stringify({ projectId, idempotencyKey: 'wm-checkout-allowlist-02' }) })
+  const response = await checkout({ httpMethod: 'POST', headers: { authorization: 'Bearer customer-session' }, body: JSON.stringify({ hostingAccepted: true, projectId, idempotencyKey: 'wm-checkout-allowlist-02' }) })
   assert.equal(response.statusCode, 503)
   assert.equal(downstreamCalls, 0)
 })
@@ -200,7 +200,7 @@ test('checkout uses authenticated project ownership and creates Stripe-hosted se
       return { ok: true, json: async () => ({ id: 'cs_test_12345678', url: 'https://checkout.stripe.test/session', livemode: false, metadata: { wm_order_id: params.get('metadata[wm_order_id]') } }) }
     },
   })
-  const response = await handler({ httpMethod: 'POST', headers: { authorization: 'Bearer user-token' }, body: JSON.stringify({ projectId, idempotencyKey: 'wm-checkout-test-02' }) })
+  const response = await handler({ httpMethod: 'POST', headers: { authorization: 'Bearer user-token' }, body: JSON.stringify({ hostingAccepted: true, projectId, idempotencyKey: 'wm-checkout-test-02' }) })
   assert.equal(response.statusCode, 200)
   assert.equal(JSON.parse(response.body).checkoutUrl, 'https://checkout.stripe.test/session')
   assert.equal(savedOrderRequest.idempotencyKey, `wm-project-${ownerId}-${projectId}`)
@@ -249,7 +249,7 @@ test('checkout retries reuse one project order and the already-created Stripe se
   })
   const invoke = (idempotencyKey) => handler({
     httpMethod: 'POST', headers: { authorization: 'Bearer user-token', 'idempotency-key': idempotencyKey },
-    body: JSON.stringify({ projectId, idempotencyKey }),
+    body: JSON.stringify({ hostingAccepted: true, projectId, idempotencyKey }),
   })
 
   const first = await invoke('client-key-first-attempt')
@@ -276,7 +276,7 @@ test('checkout will not create another Stripe session for an order that is alrea
       throw new Error('paid order must stop before Stripe Checkout')
     },
   })
-  const response = await handler({ httpMethod: 'POST', headers: { authorization: 'Bearer user-token' }, body: JSON.stringify({ projectId }) })
+  const response = await handler({ httpMethod: 'POST', headers: { authorization: 'Bearer user-token' }, body: JSON.stringify({ hostingAccepted: true, projectId }) })
   assert.equal(response.statusCode, 409)
   assert.match(JSON.parse(response.body).error, /already has a paid or completed/i)
   assert.equal(sessionCreates, 0)
@@ -337,7 +337,7 @@ test('synthetic £99 purchase flows from Checkout through signed fulfillment, is
       return { ok: true, json: async () => ({ id: checkoutSession.id, url: 'https://checkout.stripe.test/session', livemode: false, metadata: checkoutSession.metadata }) }
     },
   })
-  const checkoutResponse = await checkout({ httpMethod: 'POST', headers: { authorization: 'Bearer synthetic-user' }, body: JSON.stringify({ projectId, idempotencyKey: 'synthetic-checkout-001' }) })
+  const checkoutResponse = await checkout({ httpMethod: 'POST', headers: { authorization: 'Bearer synthetic-user' }, body: JSON.stringify({ hostingAccepted: true, projectId, idempotencyKey: 'synthetic-checkout-001' }) })
   assert.equal(checkoutResponse.statusCode, 200)
   assert.equal(checkoutSession.mode, 'payment')
   const event = { id: 'evt_synthetic_purchase', object: 'event', type: 'checkout.session.completed', livemode: false, data: { object: { id: checkoutSession.id, metadata: checkoutSession.metadata } } }
@@ -632,4 +632,17 @@ test('bad Stripe signature never calls the database or publisher', async () => {
   const response = await handler({ httpMethod: 'POST', body: '{}', headers: { 'stripe-signature': 't=1,v1=bad' } })
   assert.equal(response.statusCode, 400)
   assert.equal(calls, 0)
+})
+
+test('checkout requires explicit hosting acknowledgement before any project or Stripe request', async () => {
+  const checkout = createWebsiteMachineCheckoutApi({
+    env: { WM_STRIPE_SECRET_KEY: 'sk_test_hosting', WM_STRIPE_PRICE_ID: 'price_99' },
+    verifyUser: async () => ({ id: 'customer' }),
+    isAuthorizedTester: async () => true,
+    getProject: async () => assert.fail('project read before acknowledgement'),
+    fetchImpl: async () => assert.fail('Stripe called before acknowledgement'),
+  })
+  const result = await checkout({ httpMethod: 'POST', body: JSON.stringify({ hostingAccepted: 'true' }) })
+  assert.equal(result.statusCode, 400)
+  assert.match(result.body, /Accept the hosting terms/)
 })
