@@ -2,17 +2,33 @@ import { createHash, randomBytes } from 'node:crypto'
 import { generateWebsiteContent, renderStaticWebsite, sanitizeWebsiteContent, validateBusinessInput } from './websiteMachine.js'
 import { validateResearchSources } from './websiteMachineResearch.js'
 
+export const websiteMachineIsolatedStaging = Object.freeze({
+  url: 'https://awcqqwyhtxhssuetehga.supabase.co',
+  publicUrl: 'https://deploy-preview-15--bendarus.netlify.app',
+})
 const ACTIVE_CRM_SUPABASE_URL = 'https://lqywsbqctoydtdqvjzzw.supabase.co'
 const json = (statusCode, body, headers = {}) => ({ statusCode, headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', ...headers }, body: JSON.stringify(body) })
 const cors = (headers = {}) => ({ ...headers, 'access-control-allow-origin': process.env.URL || 'http://localhost:5173', 'access-control-allow-headers': 'content-type, authorization, idempotency-key', 'access-control-allow-methods': 'GET, POST, PUT, OPTIONS', vary: 'Origin' })
 const bearer = (event) => (event.headers?.authorization || event.headers?.Authorization || '').match(/^Bearer\s+(.+)$/i)?.[1] || ''
 
 export function getWebsiteMachineConfig(env = process.env) {
+  if (!['production', 'staging'].includes(env.WM_RUNTIME_ENV)) return null
   const production = env.WM_RUNTIME_ENV === 'production'
   const url = production ? env.WM_PRODUCTION_SUPABASE_URL : (env.WM_STAGING_SUPABASE_URL || env.WM_SUPABASE_URL)
   const publishableKey = production ? env.WM_PRODUCTION_SUPABASE_PUBLISHABLE_KEY : (env.WM_STAGING_SUPABASE_PUBLISHABLE_KEY || env.WM_SUPABASE_PUBLISHABLE_KEY)
   const publicUrl = production ? env.WM_PRODUCTION_PUBLIC_URL : (env.WM_STAGING_PUBLIC_URL || 'https://nonstopai-staging-preview.netlify.app')
-  if (url !== ACTIVE_CRM_SUPABASE_URL || !publishableKey || !publicUrl?.startsWith('https://')) return null
+  if (typeof publishableKey !== 'string' || !publishableKey.trim() || publishableKey.startsWith('sb_secret_')) return null
+  try {
+    if (publishableKey.startsWith('eyJ') && JSON.parse(Buffer.from(publishableKey.split('.')[1], 'base64url')).role !== 'anon') return null
+    const origin = new URL(publicUrl)
+    if (origin.protocol !== 'https:' || origin.origin !== publicUrl) return null
+  } catch { return null }
+
+  if (url === websiteMachineIsolatedStaging.url) {
+    if (production || env.CONTEXT === 'production' || publicUrl !== websiteMachineIsolatedStaging.publicUrl ||
+        env.WM_STAGING_SUPABASE_URL !== url || env.WM_STAGING_SUPABASE_PUBLISHABLE_KEY !== publishableKey ||
+        !publishableKey.startsWith('sb_publishable_')) return null
+  } else if (url !== ACTIVE_CRM_SUPABASE_URL || publicUrl === websiteMachineIsolatedStaging.publicUrl) return null
   return { url, publishableKey, publicUrl, mode: production ? 'production' : 'staging' }
 }
 

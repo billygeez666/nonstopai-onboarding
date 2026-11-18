@@ -129,3 +129,8 @@
 .wm-hosting-terms legend { padding-inline:6px; font-weight:700; }
 .wm-hosting-terms label { display:flex; align-items:center; gap:10px; min-height:44px; }
 .wm-hosting-terms input[type="checkbox"] { width:20px; height:20px; flex:none; accent-color:#a6e665; }
+
+.wm-app .wm-purchase-flow .wm-auth-panel { padding:clamp(16px,3vw,24px); }
+.wm-app .wm-purchase-flow .wm-auth-panel form { display:grid; grid-template-columns:minmax(0,1fr); gap:12px; }
+.wm-app .wm-purchase-flow .wm-auth-panel input { width:100%; min-width:0; min-height:44px; }
+.wm-app .wm-purchase-flow .wm-auth-panel button { min-height:44px; white-space:normal; }

@@ -7,7 +7,7 @@ import { createDeliveryApi } from '../../netlify/functions/website-machine-deliv
 const business = { businessName: 'Northstar Motor Works', industry: 'Garage', location: 'Leeds', websiteUrl: '', verifiedInfo: 'MOT testing\nServicing' }
 const content = { businessName: business.businessName, industry: business.industry, location: business.location, websiteUrl: '', heroTitle: 'Northstar Motor Works in Leeds', heroDescription: 'Garage · Leeds', aboutTitle: 'About Northstar', aboutDescription: 'Review supplied information.', facts: ['MOT testing', 'Servicing'], ctaLabel: 'Explore Northstar' }
 const project = { id: 'c70f3d5f-f910-441a-9b39-8374d1d28532', owner_id: 'd3cbfcf4-7cb8-4f63-a20d-73d963a88791', business, content, research: [], status: 'draft' }
-const env = { WM_STAGING_SUPABASE_URL: 'https://lqywsbqctoydtdqvjzzw.supabase.co', WM_STAGING_SUPABASE_PUBLISHABLE_KEY: 'sb_publishable_wm_test' }
+const env = { WM_RUNTIME_ENV: 'staging', WM_STAGING_SUPABASE_URL: 'https://lqywsbqctoydtdqvjzzw.supabase.co', WM_STAGING_SUPABASE_PUBLISHABLE_KEY: 'sb_publishable_wm_test' }
 const accessToken = `eyJ${'a'.repeat(100)}`
 const event = (httpMethod, body, headers = {}) => ({ httpMethod, body: body ? JSON.stringify(body) : '', headers, rawUrl: 'https://local.invalid/.netlify/functions/website-machine-project' })
 const userFetch = async (url) => url.endsWith('/auth/v1/user') ? { ok: true, json: async () => ({ id: project.owner_id, email: 'wm-test@example.test' }) } : null
