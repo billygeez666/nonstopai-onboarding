@@ -1,0 +1,72 @@
+.wm-app { --lime:#d9fa83; --white:#f7f6ef; background:#111512; color:var(--white); padding-inline:max(24px, calc((100vw - 1260px)/2)); font-family:"DM Sans",system-ui,sans-serif; }
+.wm-app :where(a,button,input,textarea,summary):focus-visible { outline:2px solid #94aa43; outline-offset:4px; }
+.wm-topbar { gap:18px; min-height:76px; }
+.wm-topbar nav { display:flex; gap:clamp(14px,3vw,38px); font-size:14px; }
+.wm-topbar nav a,.wm-page-footer a { color:inherit; }
+.wm-brand { font-family:inherit; text-transform:none; font-size:19px; letter-spacing:-.045em; }
+.wm-sales-hero { display:grid; grid-template-columns:1fr 1fr; gap:clamp(24px,6vw,92px); align-items:center; padding:clamp(60px,9vw,138px) 0; }
+.wm-sales-label { color:#c9e971; font-size:12px; font-weight:750; letter-spacing:.075em; text-transform:uppercase; }
+.wm-sales-hero h1,.wm-sales-section h2 { font-family:"Instrument Serif",Georgia,serif; font-weight:400; letter-spacing:-.055em; line-height:.99; margin:16px 0 22px; }
+.wm-sales-hero h1 { font-size:clamp(50px,6.25vw,94px); }
+.wm-sales-hero h1 em { color:#d9fa83; font-weight:inherit; }
+.wm-sales-hero p:not(.wm-sales-label) { color:#d4d9cf; max-width:45ch; font-size:17px; line-height:1.65; }
+.wm-sales-hero small { color:#abb4a8; display:block; margin-top:19px; }
+.wm-sales-actions { display:flex; flex-wrap:wrap; align-items:center; gap:16px 24px; margin-top:25px; }
+.wm-sales-actions a { color:inherit; }
+.wm-app .wm-sales-primary { display:inline-flex; align-items:center; justify-content:center; gap:10px; background:#d9fa83; border-radius:5px; min-height:44px; padding:11px 17px; color:#17210d; font:750 14px/1.25 "DM Sans",system-ui,sans-serif; text-decoration:none; }
+.wm-app .wm-sales-primary:hover { background:#e8ffad; }
+.wm-sales-showcase,.wm-sales-gallery figure { overflow:hidden; margin:0; border-radius:14px; }
+.wm-sales-showcase { background:#212b22; border:1px solid #455246; box-shadow:0 30px 90px #0008; }
+.wm-sales-showcase>div { display:flex; gap:16px; padding:13px 16px; font-size:11px; color:#d4d9cf; }
+.wm-sales-showcase>div span:first-child { color:#d9fa83; }
+.wm-sales-showcase img,.wm-sales-gallery img { display:block; width:100%; aspect-ratio:1.65; object-fit:cover; object-position:top; }
+.wm-sales-showcase figcaption,.wm-sales-gallery figcaption { display:flex; flex-wrap:wrap; justify-content:space-between; gap:6px 16px; padding:14px 16px; font-size:13px; }
+.wm-sales-showcase figcaption span { color:#b9c3b5; }
+.wm-sales-section { border-top:1px solid #364138; padding:clamp(34px,6vw,82px) clamp(18px,4vw,58px); }
+.wm-sales-section h2 { font-size:clamp(37px,5vw,68px); }
+.wm-sales-section p,.wm-sales-section li { line-height:1.6; }
+.wm-sales-steps { background:#1b261d; border-radius:16px; }
+.wm-sales-steps ol,.wm-sales-gallery,.wm-sales-comparison>div { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:18px; padding:0; list-style:none; }
+.wm-sales-steps li,.wm-sales-comparison article { padding:20px 0 0; border-top:1px solid #566655; }
+.wm-sales-steps li p { color:#c7d0c5; margin-bottom:0; }
+.wm-sales-builder { padding:clamp(32px,6vw,76px) 0; scroll-margin-top:12px; grid-template-columns:minmax(250px,.72fr) minmax(0,1.65fr); align-items:start; }
+.wm-sales-builder .wm-panel h2,.wm-sales-builder .wm-preview-heading h2 { font-size:clamp(25px,3vw,40px); line-height:1.05; overflow-wrap:anywhere; }
+.wm-sales-builder .wm-panel { background:#1b261d; border-radius:14px; }
+.wm-style-picker { display:flex; gap:7px; margin-bottom:12px; }
+.wm-style-picker button { color:inherit; border:1px solid #566655; border-radius:5px; padding:9px 14px; min-height:44px; text-transform:capitalize; }
+.wm-style-picker button[aria-pressed="true"] { background:#d9fa83; color:#17210d; border-color:#d9fa83; }
+.wm-sales-builder .wm-browser { animation:wm-preview-in .35s ease-out; }
+@keyframes wm-preview-in { from { opacity:.35; transform:translateY(8px); } to { opacity:1; transform:translateY(0); } }
+@media(prefers-reduced-motion:reduce) { .wm-sales-builder .wm-browser { animation:none; } }
+.wm-purchase-flow .wm-auth-panel { margin-top:18px; }
+.wm-sales-examples,.wm-sales-faq { color:#202b20; background:#f5f4eb; border-radius:16px; }
+.wm-sales-examples .wm-sales-label { color:#495e20; }
+.wm-sales-gallery { grid-template-columns:repeat(2,minmax(0,1fr)); }
+.wm-sales-gallery figure { border:1px solid #d8ddce; background:#fffef8; }
+.wm-sales-gallery figcaption span { color:#495a46; }
+.wm-sales-comparison>div { grid-template-columns:repeat(2,minmax(0,1fr)); }
+.wm-sales-comparison article p { color:#c7d0c5; }
+.wm-sales-price { display:grid; grid-template-columns:.8fr 1.2fr; gap:25px; align-items:center; background:#202d20; border-radius:16px; }
+.wm-sales-price h2 small { font:500 18px/1 system-ui,sans-serif; letter-spacing:0; }
+.wm-sales-price li+li { margin-top:9px; }
+.wm-sales-faq { margin:26px 0; }
+.wm-sales-faq details { padding:14px 0; border-top:1px solid #bdc8b4; }
+.wm-sales-faq summary { cursor:pointer; font-weight:700; }
+.wm-sales-faq .wm-sales-primary { margin-top:18px; }
+@media(max-width:850px) {
+  .wm-sales-hero,.wm-sales-builder { grid-template-columns:1fr; }
+  .wm-sales-builder .wm-form-panel,.wm-sales-builder .wm-preview-column { order:0; }
+  .wm-sales-builder .wm-preview-column { min-width:0; }
+  .wm-topbar nav { display:none; }
+}
+@media(max-width:540px) {
+  .wm-app { padding-inline:15px; }
+  .wm-sales-hero { padding:48px 0; }
+  .wm-sales-steps ol,.wm-sales-gallery,.wm-sales-comparison>div,.wm-sales-price { grid-template-columns:1fr; }
+  .wm-preview-heading { flex-wrap:wrap; gap:10px; }
+}
+.wm-full-preview>button,.wm-full-preview dialog button { min-height:44px; padding:8px 12px; border:1px solid #566655; color:inherit; border-radius:5px; margin-block:8px; }
+.wm-full-preview dialog { position:fixed; inset:0; margin:auto; width:min(96vw,1200px); max-width:none; height:94dvh; max-height:none; border:1px solid #566655; border-radius:9px; padding:0; color:#f7f6ef; background:#111512; }
+.wm-full-preview dialog::backdrop { background:#000b; }
+.wm-full-preview dialog>div { display:flex; align-items:center; justify-content:space-between; padding-inline:14px; }
+.wm-full-preview dialog iframe { display:block; width:100%; height:calc(100% - 61px); border:0; background:#f5f4eb; }
