@@ -191,7 +191,16 @@ export default function WebsiteMachine() {
     }
     setDraftBusiness(business)
     setRevealCount((count) => count + 1)
-    const next = { ...result.content, visualStyle: content.visualStyle || 'balanced' }
+    const { businessName, location } = result.content
+    const primaryService = result.content.services[0]
+    const next = {
+      ...result.content,
+      visualStyle: content.visualStyle || 'balanced',
+      heroTitle: `${primaryService || businessName} in ${location}`.slice(0, 120),
+      heroDescription: `Explore services from ${businessName} in ${location}.`.slice(0, 240),
+      aboutDescription: `${businessName} serves ${location}.`,
+      ctaLabel: business.verifiedPhone ? 'Call us' : business.verifiedEmail ? 'Email us' : 'View contact details',
+    }
     setContent(next)
     setPreviewDocument(renderStaticWebsite(next, { editable: true }))
   }
@@ -429,6 +438,7 @@ export default function WebsiteMachine() {
               <p>Add a business phone number or email for your website’s contact buttons.</p>
               <label className="wm-field"><span>Business phone</span><input name="verifiedPhone" type="tel" maxLength={40} value={input.verifiedPhone || ''} onChange={updateInput} />{validation.verifiedPhone && <small className="wm-error">{validation.verifiedPhone}</small>}</label>
               <label className="wm-field"><span>Business email</span><input name="verifiedEmail" type="email" maxLength={254} value={input.verifiedEmail || ''} onChange={updateInput} />{validation.verifiedEmail && <small className="wm-error">{validation.verifiedEmail}</small>}</label>
+              <label className="wm-field"><span>Business social profile</span><input name="socialUrl" type="url" maxLength={300} placeholder="https://www.instagram.com/yourbusiness/" value={input.socialUrl || ''} onChange={updateInput} />{validation.socialUrl && <small className="wm-error">{validation.socialUrl}</small>}</label>
             </details>
             <button className="wm-generate" type="submit">{draftBusiness ? 'Update my preview' : 'Create my free preview'} ↗</button>
           </form>

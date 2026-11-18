@@ -180,7 +180,7 @@ export function createRenderPreviewApi({ env = process.env, fetchImpl = fetch } 
       if (!reviewed.ok) return { statusCode: 404, headers: { 'cache-control': 'no-store' }, body: 'Preview unavailable.' }
       // Shared concepts omit contact fields. The recipient supplies their own
       // business contact details and saves a separate owner-scoped project.
-      const content = { ...reviewed.content, verifiedPhone: '', verifiedEmail: '', websiteUrl: '', ctaLabel: 'Explore services' }
+      const content = { ...reviewed.content, verifiedPhone: '', verifiedEmail: '', websiteUrl: '', socialUrl: '', ctaLabel: 'Explore services' }
       if (url.searchParams.get('format') === 'concept') {
         return json(200, { content }, { 'x-content-type-options': 'nosniff', 'x-robots-tag': 'noindex, nofollow' })
       }

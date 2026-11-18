@@ -7,6 +7,7 @@ const MAX = {
   websiteUrl: 300,
   verifiedPhone: 40,
   verifiedEmail: 254,
+  socialUrl: 300,
   verifiedInfo: 1200,
   verifiedServices: 800,
 }
@@ -15,6 +16,22 @@ const MAX = {
 const stripControls = (value) => String(value ?? '').replace(/[\u0000-\u001f\u007f]/g, '').trim()
 // eslint-disable-next-line no-control-regex -- line breaks are meaningful delimiters between verified facts
 const stripMultilineControls = (value) => String(value ?? '').replace(/[\u0000-\u0009\u000b-\u001f\u007f]/g, '').trim()
+
+function publicSocialUrl(value) {
+  try {
+    const url = new URL(value)
+    const host = url.hostname.replace(/^www\./, '')
+    if (url.protocol === 'https:' && !url.username && !url.password && !url.port && url.pathname !== '/' &&
+      ['facebook.com', 'instagram.com', 'linkedin.com', 'tiktok.com', 'youtube.com'].includes(host)) {
+      url.search = ''
+      url.hash = ''
+      return url.toString()
+    }
+  } catch {
+    // Missing and invalid social links are omitted by the renderer.
+  }
+  return ''
+}
 
 export function validateBusinessInput(input) {
   const clean = Object.fromEntries(Object.entries(MAX).map(([key, limit]) => [
@@ -38,6 +55,11 @@ export function validateBusinessInput(input) {
   if (clean.verifiedEmail && !/^[^\s@<>"']+@[^\s@<>"']+\.[^\s@<>"']{2,}$/.test(clean.verifiedEmail)) {
     errors.verifiedEmail = 'Enter a valid verified email address.'
   }
+  if (clean.socialUrl) {
+    const socialUrl = publicSocialUrl(clean.socialUrl)
+    if (socialUrl) clean.socialUrl = socialUrl
+    else errors.socialUrl = 'Enter the HTTPS link to your business social profile.'
+  }
   if (clean.websiteUrl) {
     try {
       const url = new URL(clean.websiteUrl.match(/^https?:\/\//i) ? clean.websiteUrl : `https://${clean.websiteUrl}`)
@@ -55,7 +77,7 @@ export function validateBusinessInput(input) {
 export function generateWebsiteContent(input) {
   const result = validateBusinessInput(input)
   if (!result.ok) return { ok: false, errors: result.errors }
-  const { businessName, industry, location, websiteUrl, verifiedInfo, verifiedServices, verifiedPhone, verifiedEmail } = result.value
+  const { businessName, industry, location, websiteUrl, verifiedInfo, verifiedServices, verifiedPhone, verifiedEmail, socialUrl } = result.value
   const facts = verifiedInfo.split(/\n/).map((line) => line.replace(/^\s*(?:[-*•]|\d+[.)])\s*/, '').trim()).filter(Boolean)
   const services = verifiedServices.split(/\n/).map((line) => line.replace(/^\s*(?:[-*•]|\d+[.)])\s*/, '').trim()).filter(Boolean)
   const article = /^[aeiou]/i.test(industry) ? 'an' : 'a'
@@ -79,6 +101,7 @@ export function generateWebsiteContent(input) {
       services,
       verifiedPhone,
       verifiedEmail,
+      ...(socialUrl && { socialUrl }),
       ctaLabel,
     },
   }
@@ -95,6 +118,8 @@ export function sanitizeWebsiteContent(value) {
   const limits = { businessName: 100, industry: 80, location: 100, websiteUrl: 300, verifiedPhone: 40, verifiedEmail: 254, heroTitle: 120, heroDescription: 240, aboutTitle: 120, aboutDescription: 300, ctaLabel: 100 }
   const content = Object.fromEntries(Object.entries(limits).map(([key, limit]) => [key, sanitizeEditableText(value[key], limit)]))
   if (visualStyles.has(value.visualStyle)) content.visualStyle = value.visualStyle
+  const socialUrl = publicSocialUrl(sanitizeEditableText(value.socialUrl, 300))
+  if (socialUrl) content.socialUrl = socialUrl
   content.facts = value.facts.map((fact) => sanitizeEditableText(fact, 180)).filter(Boolean)
   content.services = (value.services || []).map((service) => sanitizeEditableText(service, 100)).filter(Boolean)
   for (const key of ['businessName', 'industry', 'location', 'heroTitle', 'heroDescription', 'aboutTitle', 'aboutDescription', 'ctaLabel']) {
@@ -171,19 +196,23 @@ export function renderStaticWebsite(content, { editable = false, noIndex = false
   const rawEmail = String(content.verifiedEmail || '').trim()
   const safeEmail = /^[^\s@<>"']+@[^\s@<>"']+\.[^\s@<>"']{2,}$/.test(rawEmail) ? rawEmail : ''
   const serviceItems = services.length ? services : facts
-  const serviceLabel = services.length ? 'Services supplied by the business' : 'Verified business details'
+  const serviceLabel = visualStyle ? escapeHtml(content.location) : services.length ? 'Services supplied by the business' : 'Verified business details'
   const target = safePhone ? `tel:${safePhone}` : safeEmail ? `mailto:${safeEmail}` : safeWebsiteUrl || '#contact-details'
   const editableAttr = (key, max) => editable ? ` data-wm-edit="${key}" data-wm-max="${max}" contenteditable="true" role="textbox" aria-multiline="true" aria-label="Edit generated website copy" spellcheck="true"` : ''
   const serviceCards = serviceItems.map((item, index) => `
         <article class="wm-service-card"><span class="wm-card-number">${String(index + 1).padStart(2, '0')}</span><h3>${escapeHtml(item)}</h3><p>${services.length ? `Ask ${escapeHtml(content.businessName)} in ${escapeHtml(content.location)} about ${escapeHtml(item.toLowerCase())} and current availability.` : `Business detail supplied for ${escapeHtml(content.businessName)} in ${escapeHtml(content.location)}.`}</p><span class="wm-card-arrow" aria-hidden="true">↗</span></article>`).join('')
   const verifiedFacts = additionalFacts.map((fact, index) => `<li><span>${String(index + 1).padStart(2, '0')}</span>${escapeHtml(fact)}</li>`).join('\n          ')
   const verifiedFactsList = verifiedFacts ? `<ul class="wm-facts" aria-label="Verified business information">${verifiedFacts}</ul>` : ''
+  const socialUrl = publicSocialUrl(content.socialUrl)
   const contactLinks = [
     safePhone ? `<a class="wm-contact-link" href="tel:${escapeHtml(safePhone)}">Call the business <span aria-hidden="true">↗</span></a>` : '',
     safeEmail ? `<a class="wm-contact-link" href="mailto:${escapeHtml(safeEmail)}">Email the business <span aria-hidden="true">↗</span></a>` : '',
     safeWebsiteUrl ? `<a class="wm-contact-link" href="${escapeHtml(safeWebsiteUrl)}" target="_blank" rel="noreferrer">Visit the current website <span aria-hidden="true">↗</span></a>` : '',
+    socialUrl ? `<a class="wm-contact-link" href="${escapeHtml(socialUrl)}" target="_blank" rel="noreferrer">Find us on social media <span aria-hidden="true">↗</span></a>` : '',
   ].filter(Boolean).join('')
-  const contactCopy = contactLinks
+  const contactCopy = visualStyle
+    ? (contactLinks ? 'Get in touch to discuss your enquiry.' : 'Contact details will appear here when supplied.')
+    : contactLinks
     ? 'Use one of the verified contact methods supplied by the business. Confirm these details before publishing.'
     : 'No contact details were supplied for this draft. Add a verified phone number, email address or website before publishing.'
 
@@ -203,6 +232,10 @@ export function renderStaticWebsite(content, { editable = false, noIndex = false
     .wm-theme-cleaning{--deep:#164049;--accent:#257e85;--accent-soft:#d2eeec}
     .wm-theme-trades{--deep:#242b34;--accent:#b9522e;--accent-soft:#f5decf}
     body[data-style]{overflow-wrap:anywhere}
+    body[data-style] .wm-generated-note,body[data-style] .wm-generated-copy-label,
+    body[data-style] .wm-card-number,body[data-style] .wm-card-arrow,body[data-style] .wm-footer>span:empty{display:none}
+    body[data-style] .wm-service-card{min-height:120px}
+    body[data-style] .wm-service-card h3{margin-top:8px}
     body[data-style] .wm-hero h1{font-size:clamp(36px,5.7vw,76px)}
     body[data-style] .wm-hero-art{border-radius:6px}
     body[data-style=dark]{--paper:#12171a;--surface:#212a2e;--ink:#f5f5eb;--muted:#c5ceca;--line:#405056;--accent:#c8ddad;--deep:#273c39;background:var(--paper);color:var(--ink)}
@@ -231,9 +264,9 @@ export function renderStaticWebsite(content, { editable = false, noIndex = false
       <div class="wm-hero-copy"><span class="wm-eyebrow"><i class="wm-eyebrow-dot" aria-hidden="true"></i>${escapeHtml(content.industry)} <span>·</span> ${escapeHtml(content.location)}</span><h1 id="hero-title"${editableAttr('heroTitle', 120)}>${title}</h1><p${editableAttr('heroDescription', 240)}>${summary}</p><div class="wm-hero-actions"><a class="wm-button wm-button-primary" href="${escapeHtml(target)}">${escapeHtml(content.ctaLabel)} <span aria-hidden="true">↗</span></a><a class="wm-button-secondary" href="#services">${services.length ? 'Explore services' : 'Explore details'} ↓</a></div><div class="wm-generated-note">Generated marketing copy · verified business facts are identified below</div></div>
       <div class="wm-hero-art" aria-hidden="true">${heroArt}<div class="wm-art-caption">${escapeHtml(content.industry)} <span>—</span> ${escapeHtml(content.location)}</div></div>
     </section>
-    <section class="wm-section" id="services"><div class="wm-section-heading"><div><p class="wm-section-kicker">${serviceLabel}</p><h2>${services.length ? 'What the business offers' : 'What we know'}</h2></div><p>${services.length ? 'Each service listed here was supplied as verified information.' : 'These business details were supplied for this draft and should be checked before publishing.'}</p></div><div class="wm-services">${serviceCards || '<article class="wm-service-card"><span class="wm-card-number">01</span><h3>More details needed</h3><p>Add verified services or business facts to complete this section.</p></article>'}</div></section>
+    <section class="wm-section" id="services"><div class="wm-section-heading"><div><p class="wm-section-kicker">${serviceLabel}</p><h2>${visualStyle ? (services.length ? 'Our services' : 'Business details') : (services.length ? 'What the business offers' : 'What we know')}</h2></div>${visualStyle ? '' : `<p>${services.length ? 'Each service listed here was supplied as verified information.' : 'These business details were supplied for this draft and should be checked before publishing.'}</p>`}</div><div class="wm-services">${serviceCards || '<article class="wm-service-card"><span class="wm-card-number">01</span><h3>More details needed</h3><p>Add verified services or business facts to complete this section.</p></article>'}</div></section>
     <section class="wm-section wm-about" id="about"><div><span class="wm-about-label">About the business</span><p class="wm-section-kicker" style="margin-top:12px">${escapeHtml(content.industry)} · ${escapeHtml(content.location)}</p></div><div class="wm-about-copy"><h2${editableAttr('aboutTitle', 120)}>${aboutTitle}</h2><span class="wm-generated-copy-label">Generated marketing copy · editable</span><p${editableAttr('aboutDescription', 300)}>${about}</p>${verifiedFactsList}</div></section>
-    <section class="wm-contact" id="contact-details"><div><p class="wm-section-kicker">Next step</p><h2>Ready to talk about what you need?</h2><p class="wm-contact-note">${contactCopy}</p></div><div class="wm-contact-actions">${contactLinks || '<span class="wm-contact-note">Verified contact details needed before publishing</span>'}</div></section>
+    <section class="wm-contact" id="contact-details"><div><p class="wm-section-kicker">Next step</p><h2>Ready to talk about what you need?</h2><p class="wm-contact-note">${contactCopy}</p></div><div class="wm-contact-actions">${contactLinks || (visualStyle ? '' : '<span class="wm-contact-note">Verified contact details needed before publishing</span>')}</div></section>
   </main>
   ${claimUrl ? '<aside id="claim-website" class="wm-preview-entry">Continue to make your own editable copy and sign in before saving or purchasing. <a href="' + escapeHtml(claimUrl) + '">Continue to Website Machine</a></aside>' : ''}
   <footer class="wm-shell wm-footer"><strong>${name}</strong>${noIndex || editable || !visualStyle ? '<span>Draft website · business information must be verified before publishing</span>' : ''}<span>${escapeHtml(content.location)}</span></footer>
