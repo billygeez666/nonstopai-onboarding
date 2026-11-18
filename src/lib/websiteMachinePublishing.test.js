@@ -101,7 +101,7 @@ test('transient first ZIP upload failure is retried and recovers without duplica
   assert.equal(waitCalls, 1)
 })
 
-test('ambiguous upload failure reuses a newly observed deploy instead of creating another deploy', async () => {
+test('a 2xx upload response missing deployment metadata reuses the newly observed deploy instead of uploading again', async () => {
   const siteName = `wm-${projectId.replaceAll('-', '')}`
   const deployId = 'abcdef0123456789abcdef01'
   const siteRecord = { projectId, ownerId, siteId, siteName, customDomain: null, currentDeployId: null, previousDeployIds: [] }
@@ -116,7 +116,7 @@ test('ambiguous upload failure reuses a newly observed deploy instead of creatin
       const deploys = listCalls === 1 ? [] : [{ id: deployId, site_id: siteId, state: 'ready', created_at: '2026-11-18T14:35:24.000Z', deploy_ssl_url: `https://${deployId}--${siteName}.netlify.app` }]
       return { ok: true, status: 200, json: async () => deploys }
     }
-    if (url === `https://api.netlify.com/api/v1/sites/${siteId}` && options.method === 'PUT') { uploadAttempts += 1; throw new TypeError('fetch failed') }
+    if (url === `https://api.netlify.com/api/v1/sites/${siteId}` && options.method === 'PUT') { uploadAttempts += 1; return { ok: true, status: 200, headers: new Headers({ 'x-nf-request-id': 'netlifyReq123456' }), json: async () => ({}) } }
     if (url === `https://${deployId}--${siteName}.netlify.app`) return { ok: true, headers: new Headers({ 'content-type': 'text/html' }), text: async () => '<h1>A&amp;B Garage</h1>' }
     throw new Error(`Unexpected request ${url}`)
   }
@@ -128,6 +128,33 @@ test('ambiguous upload failure reuses a newly observed deploy instead of creatin
   assert.equal(result.deployId, deployId)
   assert.equal(uploadAttempts, 1)
   assert.equal(listCalls, 2)
+})
+
+test('unreconciled 2xx upload responses report a safe shape code and HTTP status without retrying blindly', async () => {
+  const siteName = `wm-${projectId.replaceAll('-', '')}`
+  const siteRecord = { projectId, ownerId, siteId, siteName, customDomain: null, currentDeployId: null, previousDeployIds: [] }
+  let uploadAttempts = 0
+  const publisher = createNetlifyCustomerPublisher({
+    env,
+    fetchImpl: async (url, options = {}) => {
+      if (url.endsWith('/accounts/nonstopai-website-machine-test')) return { ok: true, status: 200, json: async () => ({ id: accountId }) }
+      if (url.endsWith(`/sites/${siteId}/metadata`)) return { ok: true, status: 200, json: async () => ({ website_machine_project_id: projectId }) }
+      if (url === `https://api.netlify.com/api/v1/sites/${siteId}` && options.method !== 'PUT') return { ok: true, status: 200, json: async () => ({ id: siteId, account_id: accountId, name: siteName, ssl_url: `https://${siteName}.netlify.app` }) }
+      if (url.endsWith(`/sites/${siteId}/deploys?per_page=10`)) return { ok: true, status: 200, json: async () => [] }
+      if (url === `https://api.netlify.com/api/v1/sites/${siteId}` && options.method === 'PUT') { uploadAttempts += 1; return { ok: true, status: 200, headers: new Headers({ 'x-nf-request-id': 'netlifyReq123456' }), json: async () => ({}) } }
+      throw new Error(`Unexpected request ${url}`)
+    },
+    persistSite: async () => {},
+  })
+
+  await assert.rejects(publisher.publishPaidProject({ paid: true, projectId, ownerId, content, siteRecord }), (error) => {
+    assert.equal(error.code, 'NETLIFY_DEPLOY_ID_MISSING')
+    assert.equal(error.status, 200)
+    assert.equal(error.netlifyRequestId, 'netlifyReq123456')
+    assert.equal(error.websiteMachineOperation, 'netlify_deploy_upload')
+    return true
+  })
+  assert.equal(uploadAttempts, 1)
 })
 
 test('permanent upload failures are not retried and expose only sanitized provider metadata', async () => {

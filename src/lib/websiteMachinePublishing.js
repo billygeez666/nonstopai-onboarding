@@ -121,6 +121,7 @@ const jsonResponse = async (response) => {
   if (!response.ok) {
     const error = new Error(`Netlify API request failed (${response.status}).`)
     error.status = response.status
+    error.code = `NETLIFY_HTTP_${response.status}`
     const providerRequestId = response.headers?.get?.('x-nf-request-id') || response.headers?.get?.('x-request-id')
     if (typeof providerRequestId === 'string' && /^[A-Za-z0-9_-]{6,80}$/.test(providerRequestId)) error.netlifyRequestId = providerRequestId
     const headerCode = response.headers?.get?.('x-nf-error-code') || response.headers?.get?.('x-error-code')
@@ -134,6 +135,17 @@ const jsonResponse = async (response) => {
     throw error
   }
   return response.status === 204 ? null : response.json()
+}
+
+function attachNetlifyResponseMetadata(value, response) {
+  if (!value || typeof value !== 'object') return value
+  try {
+    Object.defineProperties(value, {
+      netlifyResponseStatus: { value: response.status, configurable: true },
+      netlifyRequestId: { value: response.headers?.get?.('x-nf-request-id') || response.headers?.get?.('x-request-id') || undefined, configurable: true },
+    })
+  } catch {}
+  return value
 }
 
 export function createNetlifyCustomerPublisher({
@@ -155,23 +167,41 @@ export function createNetlifyCustomerPublisher({
     if (!env.WM_NETLIFY_CUSTOMER_TOKEN) throw new Error('Customer site publishing is not configured.')
     const operation = netlifyApiOperation(path, options.method || 'GET')
     const { timeoutMs = 10_000, ...fetchOptions } = options
+    let response
     try {
-      const response = await fetchImpl(`${NETLIFY_API}${path}`, {
+      response = await fetchImpl(`${NETLIFY_API}${path}`, {
         ...fetchOptions,
         signal: AbortSignal.timeout(timeoutMs),
         headers: { authorization: `Bearer ${env.WM_NETLIFY_CUSTOMER_TOKEN}`, ...fetchOptions.headers },
       })
-      return await jsonResponse(response)
     } catch (error) {
       if (error?.name === 'TimeoutError' || error?.name === 'AbortError') error.code ||= 'NETLIFY_REQUEST_TIMEOUT'
-      else if (error?.name === 'TypeError') error.code ||= 'NETLIFY_NETWORK_ERROR'
-      else if (Number.isInteger(error?.status)) error.code ||= `NETLIFY_HTTP_${error.status}`
+      else error.code ||= 'NETLIFY_NETWORK_ERROR'
+      throw attachSafeOperation(error, operation)
+    }
+    try {
+      return attachNetlifyResponseMetadata(await jsonResponse(response), response)
+    } catch (error) {
+      error.netlifyResponseReceived = true
+      if (!Number.isInteger(error.status)) error.status = response.status
+      const requestId = response.headers?.get?.('x-nf-request-id') || response.headers?.get?.('x-request-id')
+      if (!error.netlifyRequestId && typeof requestId === 'string' && /^[A-Za-z0-9_-]{6,80}$/.test(requestId)) error.netlifyRequestId = requestId
+      if (error.name === 'SyntaxError') error.code ||= 'NETLIFY_RESPONSE_INVALID_JSON'
       throw attachSafeOperation(error, operation)
     }
   }
 
   const isTransientUploadError = (error) => error?.code === 'NETLIFY_REQUEST_TIMEOUT' ||
     error?.name === 'TypeError' || [408, 425, 429, 500, 502, 503, 504].includes(error?.status)
+
+  function uploadResponseError(message, code, response) {
+    const error = new Error(message)
+    error.code = code
+    error.netlifyResponseReceived = true
+    if (Number.isInteger(response?.netlifyResponseStatus)) error.status = response.netlifyResponseStatus
+    if (typeof response?.netlifyRequestId === 'string' && /^[A-Za-z0-9_-]{6,80}$/.test(response.netlifyRequestId)) error.netlifyRequestId = response.netlifyRequestId
+    return attachSafeOperation(error, 'netlify_deploy_upload')
+  }
 
   async function uploadWithRecovery(site, archive) {
     // Snapshot deploy IDs before the first ZIP request. A timed-out/5xx response
@@ -189,12 +219,13 @@ export function createNetlifyCustomerPublisher({
           method: 'PUT', timeoutMs: uploadTimeoutMs,
           headers: { 'content-type': 'application/zip' }, body: archive,
         })
-        if (!deploy?.id) throw attachSafeOperation(new Error('Netlify did not start a customer deploy.'), 'netlify_deploy_upload')
-        if (deploy.site_id !== site.id) throw attachSafeOperation(new Error('Netlify returned a deploy for a different site.'), 'netlify_deploy_upload')
+        if (!deploy?.id) throw uploadResponseError('Netlify did not return a deployment ID.', 'NETLIFY_DEPLOY_ID_MISSING', deploy)
+        if (deploy.site_id !== site.id) throw uploadResponseError('Netlify returned a deployment for a different site.', 'NETLIFY_DEPLOY_SITE_MISMATCH', deploy)
         return deploy
       } catch (error) {
         lastError = error
-        if (!isTransientUploadError(error)) throw error
+        const responseMayHaveCreatedDeploy = error?.netlifyResponseReceived === true && error.status >= 200 && error.status < 300
+        if (!isTransientUploadError(error) && !responseMayHaveCreatedDeploy) throw error
 
         // Reconcile ambiguous failures before issuing another deploy request.
         // The site is isolated to this paid project, so a newly-created deploy
@@ -208,6 +239,7 @@ export function createNetlifyCustomerPublisher({
           .sort((a, b) => Date.parse(b.created_at || '') - Date.parse(a.created_at || ''))[0]
         if (observed && observed.state !== 'error') return observed
         if (observed) priorIds.add(observed.id)
+        if (responseMayHaveCreatedDeploy) throw error
         if (attempt === maxUploadAttempts) throw error
 
         await sleep(Math.min(250 * (2 ** (attempt - 1)), 1000))
