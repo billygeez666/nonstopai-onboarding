@@ -79,16 +79,17 @@ export function createAuthApi({ env = process.env, fetchImpl = fetch } = {}) {
       })
       if (!response.ok) {
         const details = await response.json().catch(() => ({}))
-        if (response.status === 429 || details.code === 'over_email_send_rate_limit') {
+        const errorCode = details?.error_code || details?.code
+        if (response.status === 429 || errorCode === 'over_email_send_rate_limit') {
           return json(429, { error: 'Too many attempts. Wait a minute before trying again.' }, cors({ 'retry-after': '60' }))
         }
-        if (!signup && !resend && details.code === 'email_not_confirmed') {
+        if (!signup && !resend && errorCode === 'email_not_confirmed') {
           return json(200, { confirmationRequired: true }, cors())
         }
-        if (signup && ['user_already_exists', 'email_exists'].includes(details.code)) {
+        if (signup && ['user_already_exists', 'email_exists'].includes(errorCode)) {
           return json(200, { confirmationRequired: true }, cors())
         }
-        if (resend && ['user_not_found', 'user_already_exists', 'email_exists'].includes(details.code)) {
+        if (resend && ['user_not_found', 'user_already_exists', 'email_exists'].includes(errorCode)) {
           return json(200, { confirmationRequested: true }, cors())
         }
         return json(resend ? 503 : signup ? 400 : 401, {
@@ -112,8 +113,9 @@ export function createProjectApi({ env = process.env, fetchImpl = fetch } = {}) 
     const response = await fetchImpl(`${config.url}/rest/v1/${path}`, { ...options, headers: { apikey: config.publishableKey, authorization: `Bearer ${token}`, 'content-type': 'application/json', ...options.headers } })
     if (!response.ok) {
       const details = await response.json().catch(() => ({}))
+        const errorCode = details?.error_code || details?.code
       const error = new Error('Storage request failed')
-      error.status = details.code === 'P0001' && /rate limit/i.test(details.message || '') ? 429 : response.status
+      error.status = errorCode === 'P0001' && /rate limit/i.test(details.message || '') ? 429 : response.status
       throw error
     }
     return response.status === 204 ? null : response.json()

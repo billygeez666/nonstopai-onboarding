@@ -56,7 +56,7 @@ test('unconfirmed credentials enter confirmation and resend uses the configured 
   const handler = createAuthApi({ env, fetchImpl: async (url, options) => {
     requests.push({ url: new URL(url), body: JSON.parse(options.body) })
     return requests.length === 1
-      ? { ok: false, status: 400, json: async () => ({ code: 'email_not_confirmed' }) }
+      ? { ok: false, status: 400, json: async () => ({ code: 400, error_code: 'email_not_confirmed' }) }
       : { ok: false, status: 429, json: async () => ({ code: 'over_email_send_rate_limit' }) }
   } })
   const email = 'person@example.test'
