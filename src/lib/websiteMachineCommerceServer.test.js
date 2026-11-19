@@ -7,13 +7,51 @@ import { getWebsiteMachineConfig } from './websiteMachineServer.js'
 const supabase = 'https://lqywsbqctoydtdqvjzzw.supabase.co'
 
 test('runtime configuration is explicitly split between staging and production', () => {
-  const config = getWebsiteMachineConfig({ WM_STAGING_SUPABASE_URL: supabase, WM_STAGING_SUPABASE_PUBLISHABLE_KEY: 'staging-publishable', WM_PRODUCTION_SUPABASE_URL: 'https://wrong.supabase.co', WM_PRODUCTION_SUPABASE_PUBLISHABLE_KEY: 'production-publishable' })
+  const config = getWebsiteMachineConfig({ WM_RUNTIME_ENV: 'staging', WM_STAGING_SUPABASE_URL: supabase, WM_STAGING_SUPABASE_PUBLISHABLE_KEY: 'staging-publishable', WM_PRODUCTION_SUPABASE_URL: 'https://wrong.supabase.co', WM_PRODUCTION_SUPABASE_PUBLISHABLE_KEY: 'production-publishable' })
   assert.equal(config.mode, 'staging')
   assert.equal(config.publishableKey, 'staging-publishable')
   const production = getWebsiteMachineConfig({ WM_RUNTIME_ENV: 'production', WM_PRODUCTION_SUPABASE_URL: supabase, WM_PRODUCTION_SUPABASE_PUBLISHABLE_KEY: 'production-publishable', WM_STAGING_SUPABASE_PUBLISHABLE_KEY: 'staging-publishable', WM_PRODUCTION_PUBLIC_URL: 'https://nonstopai.netlify.app' })
   assert.equal(production.mode, 'production')
   assert.equal(production.publishableKey, 'production-publishable')
-  assert.equal(getWebsiteMachineConfig({ WM_STAGING_SUPABASE_URL: 'https://attacker.supabase.co', WM_STAGING_SUPABASE_PUBLISHABLE_KEY: 'key' }), null)
+  assert.equal(getWebsiteMachineConfig({ WM_RUNTIME_ENV: 'staging', WM_STAGING_SUPABASE_URL: 'https://attacker.supabase.co', WM_STAGING_SUPABASE_PUBLISHABLE_KEY: 'key' }), null)
+})
+
+test('the isolated PR database requires explicit staging and the exact preview origin', async () => {
+  const isolatedUrl = 'https://awcqqwyhtxhssuetehga.supabase.co'
+  const staging = {
+    WM_RUNTIME_ENV: 'staging',
+    WM_STAGING_SUPABASE_URL: isolatedUrl,
+    WM_STAGING_SUPABASE_PUBLISHABLE_KEY: 'sb_publishable_isolated_fixture',
+    WM_STAGING_PUBLIC_URL: 'https://deploy-preview-15--bendarus.netlify.app',
+  }
+  assert.equal(getWebsiteMachineConfig(staging)?.url, isolatedUrl)
+  const dedicatedUrl = 'https://website-machine-pr15-staging.netlify.app'
+  const dedicated = { ...staging, CONTEXT: 'production', URL: dedicatedUrl, WM_STAGING_PUBLIC_URL: dedicatedUrl }
+  assert.equal(getWebsiteMachineConfig(dedicated)?.url, isolatedUrl)
+  assert.equal(getWebsiteMachineConfig({ ...dedicated, URL: 'https://website-machine-live.netlify.app' }), null)
+  assert.equal(getWebsiteMachineConfig({ ...dedicated, WM_STAGING_SUPABASE_URL: supabase }), null)
+  assert.equal(getWebsiteMachineConfig({ ...dedicated, WM_RUNTIME_ENV: 'production' }), null)
+  assert.equal(getWebsiteMachineConfig({ ...staging, WM_RUNTIME_ENV: undefined }), null)
+  assert.equal(getWebsiteMachineConfig({ ...staging, WM_RUNTIME_ENV: 'preview' }), null)
+  assert.equal(getWebsiteMachineConfig({ ...staging, CONTEXT: 'production' }), null)
+  assert.equal(getWebsiteMachineConfig({ ...staging, WM_STAGING_PUBLIC_URL: 'https://bendarus.netlify.app' }), null)
+  assert.equal(getWebsiteMachineConfig({ ...staging, WM_STAGING_SUPABASE_PUBLISHABLE_KEY: 'sb_secret_fixture' }), null)
+
+  const production = {
+    ...staging,
+    WM_RUNTIME_ENV: 'production',
+    WM_PRODUCTION_SUPABASE_URL: isolatedUrl,
+    WM_PRODUCTION_SUPABASE_PUBLISHABLE_KEY: staging.WM_STAGING_SUPABASE_PUBLISHABLE_KEY,
+    WM_PRODUCTION_PUBLIC_URL: 'https://website-machine-live.netlify.app',
+  }
+  assert.equal(getWebsiteMachineConfig(production), null)
+  let requests = 0
+  const checkout = createWebsiteMachineCheckoutHandler({
+    env: production,
+    fetchImpl: async () => { requests += 1; throw new Error('unexpected outbound request') },
+  })
+  assert.equal((await checkout({ httpMethod: 'POST' })).statusCode, 503)
+  assert.equal(requests, 0)
 })
 
 test('production checkout fails closed when team scope, verified price, or production configuration is wrong', async () => {
@@ -55,7 +93,7 @@ test('production checkout verifies live-mode price but Supabase inactive-offer g
     if (url.endsWith('/rpc/wm_create_checkout_order')) return { ok: false, status: 400, json: async () => ({ code: '22023', message: 'unapproved Website Machine one-off live price' }) }
     throw new Error('The inactive offer must block checkout-session creation')
   } })
-  const response = await handler({ httpMethod: 'POST', headers: { authorization: 'Bearer authenticated-user-token' }, body: JSON.stringify({ projectId }) })
+  const response = await handler({ httpMethod: 'POST', headers: { authorization: 'Bearer authenticated-user-token' }, body: JSON.stringify({ hostingAccepted: true, projectId }) })
   assert.equal(response.statusCode, 409)
   assert.equal(JSON.parse(response.body).code, 'WM_LIVE_OFFER_INACTIVE')
   assert.deepEqual(calls.filter(({ url }) => url.includes('/checkout/sessions')), [])
@@ -184,7 +222,7 @@ test('staging checkout asks the self-only tester RPC before reading the owner pr
       if (url.includes('/rest/v1/wm_projects')) return { ok: true, json: async () => [] }
       throw new Error('project or tester checks must stop before Stripe')
     } })
-    const response = await handler({ httpMethod: 'POST', headers: { authorization: 'Bearer staging-user-token' }, body: JSON.stringify({ projectId, idempotencyKey: `wm-private-test-${allowed ? 'yes' : 'no'}-01` }) })
+    const response = await handler({ httpMethod: 'POST', headers: { authorization: 'Bearer staging-user-token' }, body: JSON.stringify({ hostingAccepted: true, projectId, idempotencyKey: `wm-private-test-${allowed ? 'yes' : 'no'}-01` }) })
     return { response, calls }
   }
 
@@ -222,7 +260,7 @@ test('inactive £99 test offer returns a safe conflict after authentication and 
     throw new Error(`Unexpected request: ${url}`)
   } })
 
-  const response = await handler({ httpMethod: 'POST', headers: { authorization: 'Bearer staging-user-token' }, body: JSON.stringify({ projectId, idempotencyKey: 'wm-inactive-offer-check-01' }) })
+  const response = await handler({ httpMethod: 'POST', headers: { authorization: 'Bearer staging-user-token' }, body: JSON.stringify({ hostingAccepted: true, projectId, idempotencyKey: 'wm-inactive-offer-check-01' }) })
   const body = JSON.parse(response.body)
   assert.equal(response.statusCode, 409)
   assert.equal(body.code, 'WM_TEST_OFFER_INACTIVE')
@@ -277,7 +315,7 @@ test('customer site status requires the owner session and returns no row for ano
   const ownerId = 'd3cbfcf4-7cb8-4f63-a20d-73d963a88791'
   const calls = []
   const handler = createWebsiteMachineCustomerSiteHandler({
-    env: { WM_STAGING_SUPABASE_URL: supabase, WM_STAGING_SUPABASE_PUBLISHABLE_KEY: 'publishable' },
+    env: { WM_RUNTIME_ENV: 'staging', WM_STAGING_SUPABASE_URL: supabase, WM_STAGING_SUPABASE_PUBLISHABLE_KEY: 'publishable' },
     fetchImpl: async (url) => {
       calls.push(url)
       if (url.endsWith('/auth/v1/user')) return { ok: true, json: async () => ({ id: ownerId }) }

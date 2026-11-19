@@ -2,7 +2,7 @@ import { createHmac, timingSafeEqual } from 'node:crypto'
 import { createDomainChallenge, createNetlifyCustomerPublisher } from './websiteMachinePublishing.js'
 import { createStripeWebsiteMachineWebhook, createWebsiteMachineCheckoutApi, isStripeTestSecretKey, isStripeLiveSecretKey, isPaidWebsiteMachineSession } from './websiteMachinePayments.js'
 import { createWebsiteMachineDeliveryEmail } from './websiteMachineEmail.js'
-import { getWebsiteMachineConfig } from './websiteMachineServer.js'
+import { getWebsiteMachineConfig, websiteMachineIsolatedStaging } from './websiteMachineServer.js'
 
 function runtime(env) {
   const config = getWebsiteMachineConfig(env)
@@ -26,7 +26,7 @@ function runtime(env) {
 }
 
 function stagingCommerceReady(config) {
-  return config?.mode === 'staging' && config.publicUrl === 'https://bendarus.netlify.app' &&
+  return config?.mode === 'staging' && (config.publicUrl === 'https://bendarus.netlify.app' || config.url === websiteMachineIsolatedStaging.url) &&
     isStripeTestSecretKey(config.stripeSecret) && config.stripeWebhookSecret?.startsWith('whsec_') && config.stripePrice?.startsWith('price_') &&
     typeof config.rpcSecret === 'string' && config.rpcSecret.length >= 32 && config.netlifyToken &&
     config.netlifyAccountSlug === 'website-machine' && config.deliveryEmailApiKey &&
@@ -76,9 +76,10 @@ function inspectStagingEnvironment(env) {
     return value
   }
   requireMatch('WM_RUNTIME_ENV', env.WM_RUNTIME_ENV, (value) => value === 'staging')
-  requireMatch('WM_STAGING_PUBLIC_URL', env.WM_STAGING_PUBLIC_URL, (value) => value === 'https://bendarus.netlify.app')
+  const expectedStagingUrl = env.WM_STAGING_SUPABASE_URL === websiteMachineIsolatedStaging.url ? getWebsiteMachineConfig(env)?.publicUrl : 'https://bendarus.netlify.app'
+  requireMatch('WM_STAGING_PUBLIC_URL', env.WM_STAGING_PUBLIC_URL, (value) => value === expectedStagingUrl)
   const supabaseUrl = selectedEnv(env, 'WM_STAGING_SUPABASE_URL', 'WM_SUPABASE_URL')
-  requireMatch(supabaseUrl.name, supabaseUrl.value, (value) => value === 'https://lqywsbqctoydtdqvjzzw.supabase.co')
+  requireMatch(supabaseUrl.name, supabaseUrl.value, (value) => value === 'https://lqywsbqctoydtdqvjzzw.supabase.co' || (value === websiteMachineIsolatedStaging.url && getWebsiteMachineConfig(env)?.url === value))
   const publishableKey = selectedEnv(env, 'WM_STAGING_SUPABASE_PUBLISHABLE_KEY', 'WM_SUPABASE_PUBLISHABLE_KEY')
   requireValue(publishableKey.name, publishableKey.value)
   const stripeSecret = selectedEnv(env, 'WM_STAGING_STRIPE_SECRET_KEY', 'STRIPE_SECRET_KEY')
@@ -124,7 +125,7 @@ export function createWebsiteMachineReadinessHandler({ env = process.env, fetchI
       invalid: inspected.invalid,
       checks: { paymentRpcSecretMatchesSupabase: null, stripePriceIsVerifiedOneOff: null },
     }
-    if (inspected.rpcSecret.length >= 32 && inspected.publishableKey.value && inspected.supabaseUrl.value === 'https://lqywsbqctoydtdqvjzzw.supabase.co') {
+    if (inspected.rpcSecret.length >= 32 && inspected.publishableKey.value && getWebsiteMachineConfig(env)?.url === inspected.supabaseUrl.value) {
       try {
         const orderId = '00000000-0000-0000-0000-000000000000'
         const response = await fetchImpl(`${inspected.supabaseUrl.value}/rest/v1/rpc/wm_get_payment_order`, {

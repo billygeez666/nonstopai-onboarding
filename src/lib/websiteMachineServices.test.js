@@ -7,7 +7,7 @@ import { createDeliveryApi } from '../../netlify/functions/website-machine-deliv
 const business = { businessName: 'Northstar Motor Works', industry: 'Garage', location: 'Leeds', websiteUrl: '', verifiedInfo: 'MOT testing\nServicing' }
 const content = { businessName: business.businessName, industry: business.industry, location: business.location, websiteUrl: '', heroTitle: 'Northstar Motor Works in Leeds', heroDescription: 'Garage · Leeds', aboutTitle: 'About Northstar', aboutDescription: 'Review supplied information.', facts: ['MOT testing', 'Servicing'], ctaLabel: 'Explore Northstar' }
 const project = { id: 'c70f3d5f-f910-441a-9b39-8374d1d28532', owner_id: 'd3cbfcf4-7cb8-4f63-a20d-73d963a88791', business, content, research: [], status: 'draft' }
-const env = { WM_STAGING_SUPABASE_URL: 'https://lqywsbqctoydtdqvjzzw.supabase.co', WM_STAGING_SUPABASE_PUBLISHABLE_KEY: 'sb_publishable_wm_test' }
+const env = { WM_RUNTIME_ENV: 'staging', WM_STAGING_SUPABASE_URL: 'https://lqywsbqctoydtdqvjzzw.supabase.co', WM_STAGING_SUPABASE_PUBLISHABLE_KEY: 'sb_publishable_wm_test' }
 const accessToken = `eyJ${'a'.repeat(100)}`
 const event = (httpMethod, body, headers = {}) => ({ httpMethod, body: body ? JSON.stringify(body) : '', headers, rawUrl: 'https://local.invalid/.netlify/functions/website-machine-project' })
 const userFetch = async (url) => url.endsWith('/auth/v1/user') ? { ok: true, json: async () => ({ id: project.owner_id, email: 'wm-test@example.test' }) } : null
@@ -51,12 +51,57 @@ test('signup uses Supabase Auth confirmation redirect and never bypasses email c
   assert.equal(JSON.parse(response.body).accessToken, undefined)
 })
 
+test('unconfirmed credentials enter confirmation and resend uses the configured hosted origin', async () => {
+  const requests = []
+  const handler = createAuthApi({ env, fetchImpl: async (url, options) => {
+    requests.push({ url: new URL(url), body: JSON.parse(options.body) })
+    return requests.length === 1
+      ? { ok: false, status: 400, json: async () => ({ code: 400, error_code: 'email_not_confirmed' }) }
+      : { ok: false, status: 429, json: async () => ({ code: 'over_email_send_rate_limit' }) }
+  } })
+  const email = 'person@example.test'
+  const login = await handler(event('POST', { action: 'signin', email, password: 'fixture-password' }))
+  assert.deepEqual(JSON.parse(login.body), { confirmationRequired: true })
+  const resend = await handler(event('POST', { action: 'resend_confirmation', email }))
+  assert.equal(resend.statusCode, 429)
+  assert.equal(resend.headers['retry-after'], '60')
+  assert.equal(requests[1].url.pathname, '/auth/v1/resend')
+  assert.equal(requests[1].url.searchParams.get('redirect_to'), 'https://nonstopai-staging-preview.netlify.app/website-machine/')
+  assert.deepEqual(requests[1].body, { email, type: 'signup' })
+})
+
 test('signup rejects weak passwords before calling Supabase Auth', async () => {
   let calls = 0
   const handler = createAuthApi({ env, fetchImpl: async () => { calls += 1; throw new Error('must validate locally') } })
   const response = await handler(event('POST', { action: 'signup', email: 'person@example.test', password: 'short' }))
   assert.equal(response.statusCode, 400)
   assert.equal(calls, 0)
+})
+
+test('complete signup confirmation and sign-in API journey returns a session only after email confirmation', async () => {
+  const requests = []
+  const sessionToken = `eyJ${'b'.repeat(100)}`
+  const handler = createAuthApi({ env: { ...env, WM_STAGING_PUBLIC_URL: 'https://bendarus.netlify.app' }, fetchImpl: async (url, options) => {
+    requests.push({ url: new URL(url), body: JSON.parse(options.body) })
+    if (requests.length === 1) return { ok: true, status: 200, json: async () => ({ user: { id: project.owner_id, email: 'journey@example.test' }, access_token: null }) }
+    if (requests.length === 2) return { ok: true, status: 200, json: async () => ({}) }
+    return { ok: true, status: 200, json: async () => ({ access_token: sessionToken, refresh_token: 'not-returned', expires_in: 3600, user: { id: project.owner_id, email: 'journey@example.test' } }) }
+  } })
+  const signup = await handler(event('POST', { action: 'signup', email: 'journey@example.test', password: 'long-password-for-test' }))
+  assert.deepEqual(JSON.parse(signup.body), { confirmationRequired: true, message: 'Check your email to confirm your account, then sign in.' })
+  assert.equal(requests[0].url.pathname, '/auth/v1/signup')
+
+  const resend = await handler(event('POST', { action: 'resend_confirmation', email: 'journey@example.test' }))
+  assert.deepEqual(JSON.parse(resend.body), { confirmationRequested: true })
+  assert.equal(requests[1].url.pathname, '/auth/v1/resend')
+
+  const signIn = await handler(event('POST', { action: 'signin', email: 'journey@example.test', password: 'long-password-for-test' }))
+  const authenticated = JSON.parse(signIn.body)
+  assert.equal(signIn.statusCode, 200)
+  assert.equal(authenticated.accessToken, sessionToken)
+  assert.equal(authenticated.user.email, 'journey@example.test')
+  assert.equal('refresh_token' in authenticated, false)
+  assert.equal(requests[2].url.pathname, '/auth/v1/token')
 })
 
 test('project creation rejects anonymous callers before any database write', async () => {
@@ -156,6 +201,14 @@ test('public preview serves only a valid database-matched, unexpired token as no
   assert.doesNotMatch(response.body, /<script>/)
   const invalid = await handler({ httpMethod: 'GET', rawUrl: `https://nonstopai-staging-preview.netlify.app/.netlify/functions/website-machine-render-preview?id=${project.id}&token=short` })
   assert.equal(invalid.statusCode, 404)
+  const concept = await handler({ httpMethod: 'GET', rawUrl: `https://nonstopai-staging-preview.netlify.app/.netlify/functions/website-machine-render-preview?id=${project.id}&token=${token}&format=concept` })
+  assert.match(response.body, /Get This Website — £99/)
+  assert.equal(concept.headers['cache-control'], 'no-store')
+  const shared = JSON.parse(concept.body)
+  assert.deepEqual(Object.keys(shared), ['content'])
+  assert.equal(shared.content.verifiedPhone, '')
+  assert.equal(shared.content.verifiedEmail, '')
+  assert.equal(shared.content.websiteUrl, '')
 })
 
 test('delivery returns a fixed static attachment only to the authenticated project owner', async () => {
@@ -168,4 +221,23 @@ test('delivery returns a fixed static attachment only to the authenticated proje
   assert.match(response.headers['content-disposition'], /northstar-motor-works\.html/)
   assert.match(response.headers['cache-control'], /no-store/)
   assert.doesNotMatch(response.body, /<script>/)
+})
+
+test('share links only prefill business contacts with explicit public-contact opt-in', async () => {
+  const token = 'y'.repeat(43)
+  const rawUrl = `https://nonstopai-staging-preview.netlify.app/.netlify/functions/website-machine-render-preview?id=${project.id}&token=${token}&format=concept`
+  for (const sharePublicContacts of [false, true]) {
+    const shared = {
+      ...content, sharePublicContacts, verifiedPhone: '07700 900123',
+      verifiedEmail: 'hello@example.test', socialUrl: 'https://www.instagram.com/example/',
+    }
+    const handler = createRenderPreviewApi({ env, fetchImpl: async () => ({ ok: true, json: async () => [{ content: shared }] }) })
+    const response = await handler({ httpMethod: 'GET', rawUrl })
+    assert.equal(response.statusCode, 200)
+    const { content: publicContent } = JSON.parse(response.body)
+    assert.equal(publicContent.verifiedPhone, sharePublicContacts ? shared.verifiedPhone : '')
+    assert.equal(publicContent.verifiedEmail, sharePublicContacts ? shared.verifiedEmail : '')
+    assert.equal(publicContent.socialUrl, '')
+    assert.equal('sharePublicContacts' in publicContent, false)
+  }
 })

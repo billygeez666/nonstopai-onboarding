@@ -2,17 +2,39 @@ import { createHash, randomBytes } from 'node:crypto'
 import { generateWebsiteContent, renderStaticWebsite, sanitizeWebsiteContent, validateBusinessInput } from './websiteMachine.js'
 import { validateResearchSources } from './websiteMachineResearch.js'
 
+export const websiteMachineIsolatedStaging = Object.freeze({
+  url: 'https://awcqqwyhtxhssuetehga.supabase.co',
+  publicUrl: 'https://deploy-preview-15--bendarus.netlify.app',
+  dedicatedUrl: 'https://website-machine-pr15-staging.netlify.app',
+})
 const ACTIVE_CRM_SUPABASE_URL = 'https://lqywsbqctoydtdqvjzzw.supabase.co'
 const json = (statusCode, body, headers = {}) => ({ statusCode, headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', ...headers }, body: JSON.stringify(body) })
 const cors = (headers = {}) => ({ ...headers, 'access-control-allow-origin': process.env.URL || 'http://localhost:5173', 'access-control-allow-headers': 'content-type, authorization, idempotency-key', 'access-control-allow-methods': 'GET, POST, PUT, OPTIONS', vary: 'Origin' })
 const bearer = (event) => (event.headers?.authorization || event.headers?.Authorization || '').match(/^Bearer\s+(.+)$/i)?.[1] || ''
 
 export function getWebsiteMachineConfig(env = process.env) {
+  if (!['production', 'staging'].includes(env.WM_RUNTIME_ENV)) return null
   const production = env.WM_RUNTIME_ENV === 'production'
   const url = production ? env.WM_PRODUCTION_SUPABASE_URL : (env.WM_STAGING_SUPABASE_URL || env.WM_SUPABASE_URL)
   const publishableKey = production ? env.WM_PRODUCTION_SUPABASE_PUBLISHABLE_KEY : (env.WM_STAGING_SUPABASE_PUBLISHABLE_KEY || env.WM_SUPABASE_PUBLISHABLE_KEY)
   const publicUrl = production ? env.WM_PRODUCTION_PUBLIC_URL : (env.WM_STAGING_PUBLIC_URL || 'https://nonstopai-staging-preview.netlify.app')
-  if (url !== ACTIVE_CRM_SUPABASE_URL || !publishableKey || !publicUrl?.startsWith('https://')) return null
+  if (typeof publishableKey !== 'string' || !publishableKey.trim() || publishableKey.startsWith('sb_secret_')) return null
+  try {
+    if (publishableKey.startsWith('eyJ') && JSON.parse(Buffer.from(publishableKey.split('.')[1], 'base64url')).role !== 'anon') return null
+    const origin = new URL(publicUrl)
+    if (origin.protocol !== 'https:' || origin.origin !== publicUrl) return null
+  } catch { return null }
+
+  const dedicatedStaging = websiteMachineIsolatedStaging.dedicatedUrl
+  const isolatedHost = publicUrl === websiteMachineIsolatedStaging.publicUrl || publicUrl === dedicatedStaging || env.URL === dedicatedStaging
+  if (url === websiteMachineIsolatedStaging.url) {
+    const matchingHost = publicUrl === dedicatedStaging
+      ? env.URL === dedicatedStaging
+      : publicUrl === websiteMachineIsolatedStaging.publicUrl && env.CONTEXT !== 'production' && env.URL !== dedicatedStaging
+    if (production || !matchingHost ||
+        env.WM_STAGING_SUPABASE_URL !== url || env.WM_STAGING_SUPABASE_PUBLISHABLE_KEY !== publishableKey ||
+        !publishableKey.startsWith('sb_publishable_')) return null
+  } else if (url !== ACTIVE_CRM_SUPABASE_URL || isolatedHost) return null
   return { url, publishableKey, publicUrl, mode: production ? 'production' : 'staging' }
 }
 
@@ -39,16 +61,42 @@ export function createAuthApi({ env = process.env, fetchImpl = fetch } = {}) {
     try {
       if (Buffer.byteLength(event.body || '') > 5000) return json(413, { error: 'Request is too large.' }, cors())
       const body = JSON.parse(event.body || '{}')
-      if (typeof body.email !== 'string' || body.email.length > 254 || typeof body.password !== 'string' || body.password.length > 1024) return json(400, { error: 'Enter a valid email and password.' }, cors())
-      const email = body.email.trim()
+      const email = typeof body.email === 'string' ? body.email.trim() : ''
       const signup = body.action === 'signup'
-      if (signup && (body.password.length < 12 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))) return json(400, { error: 'Use a valid email and a password with at least 12 characters.' }, cors())
-      const signupUrl = new URL('/auth/v1/signup', config.url)
-      signupUrl.searchParams.set('redirect_to', new URL('/website-machine/', config.publicUrl).href)
-      const response = signup
-        ? await fetchImpl(signupUrl.href, { method: 'POST', headers: { apikey: config.publishableKey, 'content-type': 'application/json' }, body: JSON.stringify({ email, password: body.password }) })
-        : await fetchImpl(`${config.url}/auth/v1/token?grant_type=password`, { method: 'POST', headers: { apikey: config.publishableKey, 'content-type': 'application/json' }, body: JSON.stringify({ email, password: body.password }) })
-      if (!response.ok) return json(signup ? 400 : 401, { error: signup ? 'Account could not be created. Check the email or try signing in.' : 'Sign-in failed. Check your account details.' }, cors())
+      const resend = body.action === 'resend_confirmation'
+      if (email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ||
+          (!resend && (typeof body.password !== 'string' || body.password.length > 1024))) return json(400, { error: 'Enter a valid email and password.' }, cors())
+      if (signup && body.password.length < 12) return json(400, { error: 'Use a password with at least 12 characters.' }, cors())
+
+      const path = resend ? '/auth/v1/resend' : signup ? '/auth/v1/signup' : '/auth/v1/token'
+      const authUrl = new URL(path, config.url)
+      if (signup || resend) authUrl.searchParams.set('redirect_to', new URL('/website-machine/', config.publicUrl).href)
+      else authUrl.searchParams.set('grant_type', 'password')
+      const response = await fetchImpl(authUrl.href, {
+        method: 'POST',
+        headers: { apikey: config.publishableKey, 'content-type': 'application/json' },
+        body: JSON.stringify(resend ? { email, type: 'signup' } : { email, password: body.password }),
+      })
+      if (!response.ok) {
+        const details = await response.json().catch(() => ({}))
+        const errorCode = details?.error_code || details?.code
+        if (response.status === 429 || errorCode === 'over_email_send_rate_limit') {
+          return json(429, { error: 'Too many attempts. Wait a minute before trying again.' }, cors({ 'retry-after': '60' }))
+        }
+        if (!signup && !resend && errorCode === 'email_not_confirmed') {
+          return json(200, { confirmationRequired: true }, cors())
+        }
+        if (signup && ['user_already_exists', 'email_exists'].includes(errorCode)) {
+          return json(200, { confirmationRequired: true }, cors())
+        }
+        if (resend && ['user_not_found', 'user_already_exists', 'email_exists'].includes(errorCode)) {
+          return json(200, { confirmationRequested: true }, cors())
+        }
+        return json(resend ? 503 : signup ? 400 : 401, {
+          error: resend ? 'Confirmation email could not be requested right now.' : signup ? 'Account could not be created. Check the email or try signing in.' : 'Sign-in failed. Check your email and password, or create an account if you are new.',
+        }, cors())
+      }
+      if (resend) return json(200, { confirmationRequested: true }, cors())
       const session = await response.json()
       if (signup && !session.access_token) return json(200, { confirmationRequired: true, message: 'Check your email to confirm your account, then sign in.' }, cors())
       if (typeof session.access_token !== 'string' || !session.user?.id) return json(401, { error: 'Sign-in failed. Check your account details.' }, cors())
@@ -65,8 +113,9 @@ export function createProjectApi({ env = process.env, fetchImpl = fetch } = {}) 
     const response = await fetchImpl(`${config.url}/rest/v1/${path}`, { ...options, headers: { apikey: config.publishableKey, authorization: `Bearer ${token}`, 'content-type': 'application/json', ...options.headers } })
     if (!response.ok) {
       const details = await response.json().catch(() => ({}))
+        const errorCode = details?.error_code || details?.code
       const error = new Error('Storage request failed')
-      error.status = details.code === 'P0001' && /rate limit/i.test(details.message || '') ? 429 : response.status
+      error.status = errorCode === 'P0001' && /rate limit/i.test(details.message || '') ? 429 : response.status
       throw error
     }
     return response.status === 204 ? null : response.json()
@@ -176,7 +225,22 @@ export function createRenderPreviewApi({ env = process.env, fetchImpl = fetch } 
       if (!response.ok) throw new Error('Preview read failed')
       const rows = await response.json()
       if (!rows?.length) return { statusCode: 404, headers: { 'cache-control': 'no-store' }, body: 'Preview not found or expired.' }
-      const html = renderStaticWebsite(rows[0].content, { noIndex: true })
+      const reviewed = sanitizeWebsiteContent(rows[0].content)
+      if (!reviewed.ok) return { statusCode: 404, headers: { 'cache-control': 'no-store' }, body: 'Preview unavailable.' }
+      const { sharePublicContacts, ...publicContent } = reviewed.content
+      const publicBusiness = validateBusinessInput({
+        ...publicContent, verifiedInfo: 'Shared business concept',
+        verifiedPhone: sharePublicContacts ? publicContent.verifiedPhone : '',
+        verifiedEmail: sharePublicContacts ? publicContent.verifiedEmail : '',
+      })
+      const phone = publicBusiness.errors.verifiedPhone ? '' : publicBusiness.value.verifiedPhone
+      const email = publicBusiness.errors.verifiedEmail ? '' : publicBusiness.value.verifiedEmail
+      const content = { ...publicContent, verifiedPhone: phone, verifiedEmail: email, websiteUrl: '', socialUrl: '', ctaLabel: phone ? 'Call us' : email ? 'Email us' : 'Explore services' }
+      if (url.searchParams.get('format') === 'concept') {
+        return json(200, { content }, { 'x-content-type-options': 'nosniff', 'x-robots-tag': 'noindex, nofollow' })
+      }
+      const claimUrl = '/website-machine/#' + new URLSearchParams({ concept: id, token })
+      const html = renderStaticWebsite(content, { noIndex: true, claimUrl })
       return { statusCode: 200, headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store', 'x-robots-tag': 'noindex, nofollow', 'x-content-type-options': 'nosniff', 'referrer-policy': 'no-referrer', 'content-security-policy': "default-src 'none'; style-src 'unsafe-inline'; img-src data: https:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'" }, body: html }
     } catch {
       return { statusCode: 502, headers: { 'cache-control': 'no-store' }, body: 'Preview unavailable.' }
