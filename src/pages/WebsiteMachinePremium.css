@@ -134,3 +134,9 @@
 .wm-app .wm-purchase-flow .wm-auth-panel form { display:grid; grid-template-columns:minmax(0,1fr); gap:12px; }
 .wm-app .wm-purchase-flow .wm-auth-panel input { width:100%; min-width:0; min-height:44px; }
 .wm-app .wm-purchase-flow .wm-auth-panel button { min-height:44px; white-space:normal; }
+
+.wm-app .wm-auth-panel h3 { margin:0; font-size:clamp(1.25rem,3vw,1.5rem); }
+.wm-app .wm-auth-panel form label,.wm-app .wm-auth-confirmation { display:grid; gap:8px; min-width:0; }
+.wm-app .wm-auth-confirmation { gap:12px; overflow-wrap:anywhere; }
+.wm-app .wm-auth-panel p { margin:0; }
+.wm-app .wm-auth-panel button.wm-sales-primary:not(:disabled) { background:#a6e665; color:#172516; }

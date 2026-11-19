@@ -61,16 +61,41 @@ export function createAuthApi({ env = process.env, fetchImpl = fetch } = {}) {
     try {
       if (Buffer.byteLength(event.body || '') > 5000) return json(413, { error: 'Request is too large.' }, cors())
       const body = JSON.parse(event.body || '{}')
-      if (typeof body.email !== 'string' || body.email.length > 254 || typeof body.password !== 'string' || body.password.length > 1024) return json(400, { error: 'Enter a valid email and password.' }, cors())
-      const email = body.email.trim()
+      const email = typeof body.email === 'string' ? body.email.trim() : ''
       const signup = body.action === 'signup'
-      if (signup && (body.password.length < 12 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))) return json(400, { error: 'Use a valid email and a password with at least 12 characters.' }, cors())
-      const signupUrl = new URL('/auth/v1/signup', config.url)
-      signupUrl.searchParams.set('redirect_to', new URL('/website-machine/', config.publicUrl).href)
-      const response = signup
-        ? await fetchImpl(signupUrl.href, { method: 'POST', headers: { apikey: config.publishableKey, 'content-type': 'application/json' }, body: JSON.stringify({ email, password: body.password }) })
-        : await fetchImpl(`${config.url}/auth/v1/token?grant_type=password`, { method: 'POST', headers: { apikey: config.publishableKey, 'content-type': 'application/json' }, body: JSON.stringify({ email, password: body.password }) })
-      if (!response.ok) return json(signup ? 400 : 401, { error: signup ? 'Account could not be created. Check the email or try signing in.' : 'Sign-in failed. Check your account details.' }, cors())
+      const resend = body.action === 'resend_confirmation'
+      if (email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ||
+          (!resend && (typeof body.password !== 'string' || body.password.length > 1024))) return json(400, { error: 'Enter a valid email and password.' }, cors())
+      if (signup && body.password.length < 12) return json(400, { error: 'Use a password with at least 12 characters.' }, cors())
+
+      const path = resend ? '/auth/v1/resend' : signup ? '/auth/v1/signup' : '/auth/v1/token'
+      const authUrl = new URL(path, config.url)
+      if (signup || resend) authUrl.searchParams.set('redirect_to', new URL('/website-machine/', config.publicUrl).href)
+      else authUrl.searchParams.set('grant_type', 'password')
+      const response = await fetchImpl(authUrl.href, {
+        method: 'POST',
+        headers: { apikey: config.publishableKey, 'content-type': 'application/json' },
+        body: JSON.stringify(resend ? { email, type: 'signup' } : { email, password: body.password }),
+      })
+      if (!response.ok) {
+        const details = await response.json().catch(() => ({}))
+        if (response.status === 429 || details.code === 'over_email_send_rate_limit') {
+          return json(429, { error: 'Too many attempts. Wait a minute before trying again.' }, cors({ 'retry-after': '60' }))
+        }
+        if (!signup && !resend && details.code === 'email_not_confirmed') {
+          return json(200, { confirmationRequired: true }, cors())
+        }
+        if (signup && ['user_already_exists', 'email_exists'].includes(details.code)) {
+          return json(200, { confirmationRequired: true }, cors())
+        }
+        if (resend && ['user_not_found', 'user_already_exists', 'email_exists'].includes(details.code)) {
+          return json(200, { confirmationRequested: true }, cors())
+        }
+        return json(resend ? 503 : signup ? 400 : 401, {
+          error: resend ? 'Confirmation email could not be requested right now.' : signup ? 'Account could not be created. Check the email or try signing in.' : 'Sign-in failed. Check your email and password, or create an account if you are new.',
+        }, cors())
+      }
+      if (resend) return json(200, { confirmationRequested: true }, cors())
       const session = await response.json()
       if (signup && !session.access_token) return json(200, { confirmationRequired: true, message: 'Check your email to confirm your account, then sign in.' }, cors())
       if (typeof session.access_token !== 'string' || !session.user?.id) return json(401, { error: 'Sign-in failed. Check your account details.' }, cors())

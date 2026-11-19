@@ -51,6 +51,25 @@ test('signup uses Supabase Auth confirmation redirect and never bypasses email c
   assert.equal(JSON.parse(response.body).accessToken, undefined)
 })
 
+test('unconfirmed credentials enter confirmation and resend uses the configured hosted origin', async () => {
+  const requests = []
+  const handler = createAuthApi({ env, fetchImpl: async (url, options) => {
+    requests.push({ url: new URL(url), body: JSON.parse(options.body) })
+    return requests.length === 1
+      ? { ok: false, status: 400, json: async () => ({ code: 'email_not_confirmed' }) }
+      : { ok: false, status: 429, json: async () => ({ code: 'over_email_send_rate_limit' }) }
+  } })
+  const email = 'person@example.test'
+  const login = await handler(event('POST', { action: 'signin', email, password: 'fixture-password' }))
+  assert.deepEqual(JSON.parse(login.body), { confirmationRequired: true })
+  const resend = await handler(event('POST', { action: 'resend_confirmation', email }))
+  assert.equal(resend.statusCode, 429)
+  assert.equal(resend.headers['retry-after'], '60')
+  assert.equal(requests[1].url.pathname, '/auth/v1/resend')
+  assert.equal(requests[1].url.searchParams.get('redirect_to'), 'https://nonstopai-staging-preview.netlify.app/website-machine/')
+  assert.deepEqual(requests[1].body, { email, type: 'signup' })
+})
+
 test('signup rejects weak passwords before calling Supabase Auth', async () => {
   let calls = 0
   const handler = createAuthApi({ env, fetchImpl: async () => { calls += 1; throw new Error('must validate locally') } })
