@@ -140,3 +140,20 @@
 .wm-app .wm-auth-confirmation { gap:12px; overflow-wrap:anywhere; }
 .wm-app .wm-auth-panel p { margin:0; }
 .wm-app .wm-auth-panel button.wm-sales-primary:not(:disabled) { background:#a6e665; color:#172516; }
+.wm-app .wm-auth-panel { display:grid; gap:14px; color:#f4f6ef; background:#1b231e; border:1px solid #455447; border-radius:10px; line-height:1.5; }
+.wm-app .wm-auth-panel form { width:100%; }
+.wm-app .wm-auth-panel form label { color:#f4f6ef; font-weight:650; }
+.wm-app .wm-auth-panel input { display:block; box-sizing:border-box; width:100%; color:#fff; background:#101612; border:1px solid #718071; border-radius:7px; padding:11px 12px; caret-color:#c4f28e; }
+.wm-app .wm-auth-panel input::placeholder { color:#aeb8ad; opacity:1; }
+.wm-app .wm-auth-panel input:focus-visible { outline:2px solid #c4f28e; outline-offset:2px; border-color:#c4f28e; }
+.wm-app .wm-auth-panel form label small,.wm-app .wm-auth-confirmation small { display:block; color:#d1dbd0; font-size:12px; line-height:1.45; }
+.wm-app .wm-auth-panel .wm-auth-intro { color:#e0e8df; line-height:1.5; }
+.wm-app .wm-auth-panel .wm-auth-switch { width:100%; min-height:44px; padding:10px 12px; color:#f4f6ef; background:#29362d; border:1px solid #718071; border-radius:7px; font-weight:650; }
+.wm-app .wm-auth-panel .wm-auth-switch:hover { background:#34463a; }
+.wm-app .wm-auth-panel [role="alert"] { color:#ffd0c8; background:#542d29; border-left:3px solid #ff9384; border-radius:4px; padding:10px 12px; overflow-wrap:anywhere; }
+.wm-app .wm-auth-panel [role="status"] { color:#e4f6d6; background:#263c2a; border-left:3px solid #a6e665; border-radius:4px; padding:10px 12px; overflow-wrap:anywhere; }
+.wm-app .wm-auth-confirmation strong { color:#fff; overflow-wrap:anywhere; }
+@media(max-width:540px) {
+  .wm-app .wm-purchase-flow .wm-auth-panel { padding:16px; gap:12px; }
+  .wm-app .wm-auth-panel form { gap:10px; }
+}

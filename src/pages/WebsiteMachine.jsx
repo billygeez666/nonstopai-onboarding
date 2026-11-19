@@ -1,6 +1,8 @@
 import { websiteMachineHostingTerms } from '../lib/websiteMachineHosting.js'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useReducer, useRef, useState } from 'react'
 import { generateWebsiteContent, renderStaticWebsite, sanitizeEditableText, sanitizeWebsiteContent, validateBusinessInput } from '../lib/websiteMachine.js'
+import { createWebsiteMachineAuthUiState, shouldStartWebsiteMachineResendCooldown, websiteMachineAuthUiReducer, websiteMachineAuthView, websiteMachineConfirmationCooldownMs } from '../lib/websiteMachineAuthUi.js'
+import { clearWebsiteMachineConfirmationDraft, restoreWebsiteMachineDraft, websiteMachineConfirmationDraftKey as confirmationDraftKey, websiteMachinePurchaseDraftKey as purchaseDraftKey } from '../lib/websiteMachineDraft.js'
 import { fetchWebsiteMachineRequest, getWebsiteMachineActionState } from '../lib/websiteMachineUiState.js'
 import './WebsiteMachine.css'
 import './WebsiteMachineEdits.css'
@@ -25,32 +27,10 @@ const conceptLink = () => new URLSearchParams(window.location.hash.slice(1))
 const initialContent = { ...generateWebsiteContent(example).content, visualStyle: 'balanced' }
 const emailRecoveryOrderId = '38bdba88-0905-4045-8f46-0c83d349adfb'
 
-const purchaseDraftKey = 'wm_purchase_draft_v1'
-const confirmationDraftKey = 'wm_confirmation_draft_v1'
-
 function clearConfirmationDraft() {
-  try { localStorage.removeItem(confirmationDraftKey) } catch {}
+  clearWebsiteMachineConfirmationDraft(localStorage)
 }
 const emptyInput = { businessName: '', industry: '', location: '', verifiedInfo: '' }
-
-function restorePurchaseDraft() {
-  if (conceptLink().has('concept')) return null
-  try {
-    const saved = JSON.parse(sessionStorage.getItem(purchaseDraftKey))
-    const callback = new URLSearchParams(window.location.hash.slice(1))
-    const confirmation = callback.has('access_token') || callback.has('error_code')
-      ? JSON.parse(localStorage.getItem(confirmationDraftKey)) : null
-    if (confirmation && Date.now() > confirmation.expiresAt) clearConfirmationDraft()
-    const draft = saved && Date.now() <= saved.expiresAt ? saved : confirmation
-    if (!draft || Date.now() > draft.expiresAt) return null
-    const business = validateBusinessInput(draft.business)
-    const content = sanitizeWebsiteContent(draft.content)
-    if (!business.ok || !content.ok) return null
-    return { ...draft, business: business.value, content: content.content }
-  } catch {
-    return null
-  }
-}
 
 const purchaseFields = [
   ['businessName', 'Business name', 'text', 100],
@@ -65,7 +45,7 @@ const fields = [
 ]
 
 export default function WebsiteMachine() {
-  const [restored] = useState(restorePurchaseDraft)
+  const [restored] = useState(() => restoreWebsiteMachineDraft({ sessionStorage, localStorage, hash: window.location.hash, hasConcept: conceptLink().has('concept') }))
   const [input, setInput] = useState(restored?.business || emptyInput)
   const [draftBusiness, setDraftBusiness] = useState(restored?.business || null)
   const [hostingAccepted, setHostingAccepted] = useState(false)
@@ -99,26 +79,24 @@ export default function WebsiteMachine() {
   const [account, setAccount] = useState(() => sessionStorage.getItem('wm_account_email') || '')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
-  const [authError, setAuthError] = useState('')
-  const [authMessage, setAuthMessage] = useState('')
-  const [authMode, setAuthMode] = useState('signin')
-  const [confirmationEmail, setConfirmationEmail] = useState('')
-  const [resendAfter, setResendAfter] = useState(0)
+  const [authUi, dispatchAuthUi] = useReducer(websiteMachineAuthUiReducer, undefined, createWebsiteMachineAuthUiState)
+  const { mode: authMode, confirmationEmail, error: authError, message: authMessage } = authUi
+  const resendAfter = authUi.resendUntil > Date.now()
   const confirmationHeading = useRef(null)
   useEffect(() => {
     if (confirmationEmail) confirmationHeading.current?.focus()
   }, [confirmationEmail])
   useEffect(() => {
-    if (!resendAfter) return undefined
-    const timer = setTimeout(() => setResendAfter(0), Math.max(0, resendAfter - Date.now()))
+    if (!authUi.resendUntil || !resendAfter) return undefined
+    const timer = setTimeout(() => dispatchAuthUi({ type: 'COOLDOWN_ELAPSED' }), Math.max(0, authUi.resendUntil - Date.now()))
     return () => clearTimeout(timer)
-  }, [resendAfter])
+  }, [authUi.resendUntil, resendAfter])
   useEffect(() => {
     const callback = new URLSearchParams(window.location.hash.slice(1))
     if (!callback.has('access_token') && !callback.has('error_code')) return
     window.history.replaceState(window.history.state, '', window.location.pathname + window.location.search)
-    if (callback.has('error_code')) setAuthError('That confirmation link could not be used. Sign in if already confirmed, or request another email.')
-    else setAuthMessage('You’re back. Sign in to continue with your preview.')
+    if (callback.has('error_code')) dispatchAuthUi({ type: 'SET_ERROR', message: 'That confirmation link could not be used. Sign in if already confirmed, or request another email.' })
+    else dispatchAuthUi({ type: 'CONFIRMATION_RETURNED' })
   }, [])
   const paymentNotice = new URLSearchParams(window.location.search).get('payment')
   const returnProjectId = new URLSearchParams(window.location.search).get('project_id')
@@ -333,27 +311,25 @@ export default function WebsiteMachine() {
         }))
       } catch {}
     }
-    setConfirmationEmail(address.trim())
+    dispatchAuthUi({ type: 'CONFIRMATION_REQUIRED', email: address.trim(), resendUntil: wait ? Date.now() + websiteMachineConfirmationCooldownMs : 0 })
     setPassword('')
-    if (wait) setResendAfter(Date.now() + 60_000)
   }
 
   async function resendConfirmation() {
     if (busyAction || resendAfter) return
     setBusyAction('Requesting confirmation')
-    setAuthError('')
-    setAuthMessage('')
+    dispatchAuthUi({ type: 'RESEND_REQUESTED', resendUntil: Date.now() + websiteMachineConfirmationCooldownMs })
     try {
       const response = await request('/.netlify/functions/website-machine-auth', {
         method: 'POST', headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ action: 'resend_confirmation', email: confirmationEmail }),
       })
       const result = await response.json()
-      if (response.ok || response.status === 429) setResendAfter(Date.now() + 60_000)
+      if (shouldStartWebsiteMachineResendCooldown(response.status)) dispatchAuthUi({ type: 'RESEND_REQUESTED', resendUntil: Date.now() + websiteMachineConfirmationCooldownMs })
       if (!response.ok) throw new Error(result.error || 'Could not request a new confirmation email.')
-      setAuthMessage('If this account needs confirmation, a new link has been requested. Check Inbox, Spam and Junk.')
+      dispatchAuthUi({ type: 'SET_MESSAGE', message: 'If this account needs confirmation, a new link has been requested. Check Inbox, Spam and Junk.' })
     } catch (error) {
-      setAuthError(error.message)
+      dispatchAuthUi({ type: 'SET_ERROR', message: error.message })
     } finally {
       setBusyAction('')
     }
@@ -363,8 +339,7 @@ export default function WebsiteMachine() {
     event.preventDefault()
     const signup = authMode === 'signup'
     setBusyAction(signup ? 'Creating account' : 'Signing in')
-    setAuthError('')
-    setAuthMessage('')
+    dispatchAuthUi({ type: 'CLEAR_STATUS' })
     try {
       const response = await request('/.netlify/functions/website-machine-auth', {
         method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action: signup ? 'signup' : 'signin', email, password }),
@@ -379,13 +354,12 @@ export default function WebsiteMachine() {
       sessionStorage.setItem('wm_account_email', result.user.email || email)
       if (account && account.toLowerCase() !== result.user.email?.toLowerCase()) checkoutProject.current = null
       clearConfirmationDraft()
-      setConfirmationEmail('')
+      dispatchAuthUi({ type: 'SIGNED_IN' })
       setSession(result.accessToken)
       setAccount(result.user.email || email)
       setPassword('')
-      if (signup) setAuthMessage('Account created and signed in.')
     } catch (error) {
-      setAuthError(error.message)
+      dispatchAuthUi({ type: 'SET_ERROR', message: error.message })
     } finally {
       setBusyAction('')
     }
@@ -630,24 +604,26 @@ export default function WebsiteMachine() {
             </dialog>
           </div>}
           {(draftBusiness || paymentNotice || emailRecoveryMode) && <div className="wm-purchase-flow">
-          {(purchaseStage === 'review' || operatorSignIn || paymentNotice === 'processing' || emailRecoveryMode) && <section className="wm-auth-panel" id="website-account" aria-label="Website Machine account">
+      {(purchaseStage === 'review' || operatorSignIn || paymentNotice === 'processing' || emailRecoveryMode) && <section className={`wm-auth-panel wm-auth-panel--${websiteMachineAuthView({ session, confirmationEmail, mode: authMode })}`} id="website-account" aria-label="Website Machine account">
         {session
-          ? <><span>Signed in as <b>{account}</b></span><button type="button" onClick={signOut}>Sign out</button></>
+          ? <><span>Signed in as <b>{account}</b></span>{authMessage && <p role="status">{authMessage}</p>}<button type="button" onClick={signOut}>Sign out</button></>
           : confirmationEmail ? <div className="wm-auth-confirmation">
               <h3 ref={confirmationHeading} tabIndex={-1}>Check your email to continue</h3>
-              <p>Click the confirmation link sent to <strong>{confirmationEmail}</strong>. Check Inbox, Spam and Junk.</p>
+              <p>We sent a confirmation link to <strong>{confirmationEmail}</strong>. Open it from the same browser, then return here and sign in. Your website preview is saved while you confirm.</p>
+              <small>Also check your Spam or Junk folder if it is not in your Inbox.</small>
               <button type="button" className="wm-sales-primary" onClick={resendConfirmation} disabled={busy || Boolean(resendAfter)}>{busyAction === 'Requesting confirmation' ? 'Requesting confirmation…' : 'Resend confirmation email'}</button>
-              {resendAfter > 0 && <small>Wait a minute before requesting another email.</small>}
-              <button type="button" onClick={() => { setConfirmationEmail(''); setAuthMode('signin'); setAuthError(''); setAuthMessage('') }}>Back to sign in or change email</button>
+              {resendAfter && <small aria-live="polite">Please wait before requesting another email.</small>}
+              <button type="button" className="wm-auth-switch" onClick={() => dispatchAuthUi({ type: 'CONFIRMATION_BACK' })}>Back to sign in or change email</button>
               {authError && <p role="alert">{authError}</p>}
               {authMessage && <p role="status">{authMessage}</p>}
             </div>
           : <form onSubmit={signIn} aria-busy={busy}>
               <h3>{authMode === 'signup' ? 'Create an account' : 'Sign in to continue'}</h3>
-              <label>Email address<input aria-label="Account email" type="email" autoComplete="username" required maxLength={254} value={email} onChange={(event) => setEmail(event.target.value)} /></label>
-              <label>Password<input aria-label="Account password" type="password" autoComplete={authMode === 'signup' ? 'new-password' : 'current-password'} required minLength={authMode === 'signup' ? 12 : undefined} maxLength={1024} placeholder={authMode === 'signup' ? 'At least 12 characters' : undefined} value={password} onChange={(event) => setPassword(event.target.value)} /></label>
+              <p className="wm-auth-intro">{authMode === 'signup' ? 'Create your account to save this preview and continue to checkout.' : 'Sign in to return to your saved website preview and continue.'}</p>
+              <label>Email address<input aria-label="Account email" name="email" type="email" autoComplete="username" required maxLength={254} aria-describedby="wm-auth-email-help" value={email} onChange={(event) => setEmail(event.target.value)} /><small id="wm-auth-email-help">Use an email address you can access to confirm your account.</small></label>
+              <label>Password<input aria-label="Account password" name="password" type="password" autoComplete={authMode === 'signup' ? 'new-password' : 'current-password'} required minLength={authMode === 'signup' ? 12 : undefined} maxLength={1024} aria-describedby={authMode === 'signup' ? 'wm-auth-password-help' : undefined} placeholder={authMode === 'signup' ? 'At least 12 characters' : undefined} value={password} onChange={(event) => setPassword(event.target.value)} />{authMode === 'signup' && <small id="wm-auth-password-help">Choose a password with at least 12 characters.</small>}</label>
               <button type="submit" className="wm-sales-primary" disabled={busy}>{busyAction ? `${busyAction}…` : authMode === 'signup' ? 'Create account' : 'Sign in'}</button>
-              <button type="button" disabled={busy} onClick={() => { setAuthMode(authMode === 'signup' ? 'signin' : 'signup'); setAuthError(''); setAuthMessage('') }}>{authMode === 'signup' ? 'Already have an account? Sign in' : 'New here? Create an account'}</button>
+              <button type="button" className="wm-auth-switch" disabled={busy} onClick={() => dispatchAuthUi({ type: 'TOGGLE_MODE' })}>{authMode === 'signup' ? 'Already have an account? Sign in' : 'New here? Create an account'}</button>
               {authError && <p role="alert">{authError}</p>}
               {authMessage && <p role="status">{authMessage}</p>}
             </form>}

@@ -78,6 +78,32 @@ test('signup rejects weak passwords before calling Supabase Auth', async () => {
   assert.equal(calls, 0)
 })
 
+test('complete signup confirmation and sign-in API journey returns a session only after email confirmation', async () => {
+  const requests = []
+  const sessionToken = `eyJ${'b'.repeat(100)}`
+  const handler = createAuthApi({ env: { ...env, WM_STAGING_PUBLIC_URL: 'https://bendarus.netlify.app' }, fetchImpl: async (url, options) => {
+    requests.push({ url: new URL(url), body: JSON.parse(options.body) })
+    if (requests.length === 1) return { ok: true, status: 200, json: async () => ({ user: { id: project.owner_id, email: 'journey@example.test' }, access_token: null }) }
+    if (requests.length === 2) return { ok: true, status: 200, json: async () => ({}) }
+    return { ok: true, status: 200, json: async () => ({ access_token: sessionToken, refresh_token: 'not-returned', expires_in: 3600, user: { id: project.owner_id, email: 'journey@example.test' } }) }
+  } })
+  const signup = await handler(event('POST', { action: 'signup', email: 'journey@example.test', password: 'long-password-for-test' }))
+  assert.deepEqual(JSON.parse(signup.body), { confirmationRequired: true, message: 'Check your email to confirm your account, then sign in.' })
+  assert.equal(requests[0].url.pathname, '/auth/v1/signup')
+
+  const resend = await handler(event('POST', { action: 'resend_confirmation', email: 'journey@example.test' }))
+  assert.deepEqual(JSON.parse(resend.body), { confirmationRequested: true })
+  assert.equal(requests[1].url.pathname, '/auth/v1/resend')
+
+  const signIn = await handler(event('POST', { action: 'signin', email: 'journey@example.test', password: 'long-password-for-test' }))
+  const authenticated = JSON.parse(signIn.body)
+  assert.equal(signIn.statusCode, 200)
+  assert.equal(authenticated.accessToken, sessionToken)
+  assert.equal(authenticated.user.email, 'journey@example.test')
+  assert.equal('refresh_token' in authenticated, false)
+  assert.equal(requests[2].url.pathname, '/auth/v1/token')
+})
+
 test('project creation rejects anonymous callers before any database write', async () => {
   let databaseCalls = 0
   const handler = createProjectApi({ env, fetchImpl: async (url) => {
