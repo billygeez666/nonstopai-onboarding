@@ -191,6 +191,11 @@ test('website service layout adapts for zero, one, two, and five verified servic
   assert.match(two, /wm-services--two/)
   assert.match(two, /\.wm-services--two\{grid-template-columns:repeat\(2,minmax\(0,1fr\)\)\}/)
 
+  const three = renderStaticWebsite(withServices(['MOT testing', 'Vehicle servicing', 'Tyre fitting']))
+  assert.match(three, /wm-services--many/)
+  assert.equal((three.match(/class="wm-service-card/g) || []).length, 3)
+  assert.match(three, /\.wm-services\{display:grid;grid-template-columns:repeat\(3,minmax\(0,1fr\)\)/)
+
   const five = renderStaticWebsite(withServices(['MOT testing', 'Vehicle servicing', 'Vehicle repairs', 'Tyre fitting', 'Valeting']))
   assert.match(five, /wm-services--many/)
   assert.equal((five.match(/class="wm-service-card/g) || []).length, 5)
